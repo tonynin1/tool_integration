@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jira Tickets Query Tool</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background-color: #f9fafb;
+            color: #374151;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem 1rem;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #111827;
+            margin-bottom: 0.5rem;
+        }
+
+        .header p {
+            font-size: 1.2rem;
+            color: #6b7280;
+        }
+
+        .card {
+            background: white;
+            border-radius: 0.5rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+            color: #374151;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.375rem;
+            font-size: 1rem;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1rem;
+        }
+
+        @media (min-width: 768px) {
+            .form-row {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 0.375rem;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background-color: #2563eb;
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background-color: #1d4ed8;
+        }
+
+        .btn-success {
+            background-color: #16a34a;
+            color: white;
+        }
+
+        .btn-success:hover:not(:disabled) {
+            background-color: #15803d;
+        }
+
+        .btn:disabled {
+            background-color: #9ca3af;
+            cursor: not-allowed;
+        }
+
+        .btn-full {
+            width: 100%;
+        }
+
+        .tickets-grid {
+            display: grid;
+            gap: 1.5rem;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+        }
+
+        .ticket-card {
+            background: white;
+            border-radius: 0.5rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            padding: 1.5rem;
+            border: 1px solid #e5e7eb;
+            transition: box-shadow 0.2s;
+        }
+
+        .ticket-card:hover {
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .ticket-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 1rem;
+        }
+
+        .ticket-key {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #2563eb;
+            text-decoration: none;
+        }
+
+        .ticket-key:hover {
+            text-decoration: underline;
+        }
+
+        .status-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+
+        .status-open { background-color: #dbeafe; color: #1e40af; }
+        .status-in-progress { background-color: #fef3c7; color: #92400e; }
+        .status-done { background-color: #dcfce7; color: #166534; }
+        .status-closed { background-color: #f3f4f6; color: #374151; }
+
+        .ticket-summary {
+            margin-bottom: 1rem;
+            color: #6b7280;
+            font-size: 0.9rem;
+        }
+
+        .ticket-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.5rem;
+            font-size: 0.85rem;
+            color: #6b7280;
+        }
+
+        .detail-item {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .detail-label {
+            font-weight: 500;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .search-filters {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .search-input {
+            padding: 0.5rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.375rem;
+            min-width: 200px;
+        }
+
+        .filter-select {
+            padding: 0.5rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.375rem;
+            background: white;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 3rem;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 2rem;
+            height: 2rem;
+            border: 3px solid #f3f4f6;
+            border-top: 3px solid #2563eb;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            background-color: #fee2e2;
+            border: 1px solid #fca5a5;
+            color: #991b1b;
+            padding: 1rem;
+            border-radius: 0.375rem;
+            margin-bottom: 1rem;
+        }
+
+        .error button {
+            background: none;
+            border: none;
+            color: #991b1b;
+            text-decoration: underline;
+            cursor: pointer;
+            margin-left: 1rem;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .results-count {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #374151;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>Jira Tickets Query Tool</h1>
+            <p>Query and manage Jira tickets for specific users</p>
+        </div>
+
+        <!-- Error Alert -->
+        <div id="errorAlert" class="error hidden">
+            <span id="errorMessage"></span>
+            <button onclick="hideError()">Dismiss</button>
+        </div>
+
+        <!-- Query Form -->
+        <div class="card">
+            <h2 style="margin-bottom: 1.5rem; font-size: 1.5rem; font-weight: 600;">Query Jira Tickets</h2>
+            
+            <form id="queryForm">
+                <div class="form-group">
+                    <label for="token">OAuth2 Access Token *</label>
+                    <input type="password" id="token" class="form-control" placeholder="Your Jira OAuth2 token" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="server">Jira Server URL *</label>
+                    <input type="url" id="server" class="form-control" value="https://your-domain.atlassian.net" placeholder="https://your-domain.atlassian.net" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="user">Username or Account ID *</label>
+                    <input type="text" id="user" class="form-control" placeholder="username or account-id" required>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="timeFrom">From Date *</label>
+                        <input type="date" id="timeFrom" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="timeTo">To Date *</label>
+                        <input type="date" id="timeTo" class="form-control" required>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="includeClosedTickets">
+                        <label for="includeClosedTickets">Include closed/resolved tickets</label>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-full" id="queryBtn">
+                    <span id="queryBtnText">Query Tickets</span>
+                    <div id="querySpinner" class="spinner hidden" style="width: 1rem; height: 1rem;"></div>
+                </button>
+            </form>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loadingState" class="loading hidden">
+            <div class="spinner"></div>
+            <p style="margin-top: 1rem;">Querying Jira tickets...</p>
+        </div>
+
+        <!-- Results Section -->
+        <div id="resultsSection" class="hidden">
+            <div class="card">
+                <div class="results-header">
+                    <h2 class="results-count" id="resultsCount">Tickets (0)</h2>
+                    <button class="btn btn-success" id="exportBtn">
+                        <span>📄</span>
+                        <span id="exportBtnText">Export</span>
+                    </button>
+                </div>
+
+                <div class="controls">
+                    <div class="search-filters">
+                        <input type="text" id="searchInput" class="search-input" placeholder="Search tickets...">
+                        <select id="statusFilter" class="filter-select">
+                            <option value="">All Statuses</option>
+                        </select>
+                        <select id="typeFilter" class="filter-select">
+                            <option value="">All Types</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="ticketsGrid" class="tickets-grid"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global state
+        let currentTickets = [];
+        let filteredTickets = [];
+        let lastQueryParams = null;
+
+        // Initialize dates
+        document.addEventListener('DOMContentLoaded', function() {
+            const today = new Date();
+            const thirtyDaysAgo = new Date(today.getTime() - (30 * 24 * 60 * 60 * 1000));
+            
+            document.getElementById('timeTo').value = today.toISOString().split('T')[0];
+            document.getElementById('timeFrom').value = thirtyDaysAgo.toISOString().split('T')[0];
+        });
+
+        // Form submission
+        document.getElementById('queryForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const params = {
+                token: document.getElementById('token').value,
+                server: document.getElementById('server').value,
+                user: document.getElementById('user').value,
+                timeFrom: document.getElementById('timeFrom').value,
+                timeTo: document.getElementById('timeTo').value,
+                includeClosedTickets: document.getElementById('includeClosedTickets').checked
+            };
+
+            await queryTickets(params);
+        });
+
+        // Query tickets function
+        async function queryTickets(params) {
+            lastQueryParams = params;
+            setLoading(true);
+            hideError();
+
+            try {
+                const payload = {
+                    jira: {
+                        token: params.token,
+                        server: params.server,
+                        User: params.user,
+                        timeFrom: params.timeFrom,
+                        timeTo: params.timeTo,
+                        closeticket: params.includeClosedTickets
+                    }
+                };
+
+                const response = await fetch('/jira_updater/query', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.status}`);
+                }
+
+                const data = await response.json();
+                currentTickets = Array.isArray(data) ? data : (data.data || []);
+                
+                displayTickets(currentTickets);
+                populateFilters(currentTickets);
+                
+            } catch (error) {
+                showError(error.message || 'Failed to query tickets');
+                currentTickets = [];
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        // Display tickets
+        function displayTickets(tickets) {
+            filteredTickets = tickets;
+            updateResultsCount(tickets.length, currentTickets.length);
+            
+            const grid = document.getElementById('ticketsGrid');
+            grid.innerHTML = '';
+            
+            if (tickets.length === 0) {
+                grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 2rem; color: #6b7280;">No tickets found matching your criteria.</div>';
+                document.getElementById('resultsSection').classList.remove('hidden');
+                return;
+            }
+
+            tickets.forEach(ticket => {
+                const card = createTicketCard(ticket);
+                grid.appendChild(card);
+            });
+
+            document.getElementById('resultsSection').classList.remove('hidden');
+        }
+
+        // Create ticket card
+        function createTicketCard(ticket) {
+            const card = document.createElement('div');
+            card.className = 'ticket-card';
+            
+            const statusClass = getStatusClass(ticket.status);
+            const link = ticket.link || `${lastQueryParams?.server}/browse/${ticket.key}`;
+            
+            card.innerHTML = `
+                <div class="ticket-header">
+                    <a href="${link}" target="_blank" class="ticket-key">${ticket.key}</a>
+                    <span class="status-badge ${statusClass}">${ticket.status || 'Unknown'}</span>
+                </div>
+                <div class="ticket-summary">${ticket.summary || 'No summary available'}</div>
+                <div class="ticket-details">
+                    <div class="detail-item">
+                        <span class="detail-label">Type:</span>
+                        <span>${ticket.issuetype || 'N/A'}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Assignee:</span>
+                        <span>${ticket.assignee || 'Unassigned'}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Reporter:</span>
+                        <span>${ticket.reporter || 'N/A'}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Resolution:</span>
+                        <span>${ticket.resolution || 'Unresolved'}</span>
+                    </div>
+                </div>
+            `;
+            
+            return card;
+        }
+
+        // Get status CSS class
+        function getStatusClass(status) {
+            if (!status) return 'status-open';
+            const statusLower = status.toLowerCase();
+            if (statusLower.includes('done') || statusLower.includes('resolved')) return 'status-done';
+            if (statusLower.includes('progress') || statusLower.includes('development')) return 'status-in-progress';
+            if (statusLower.includes('closed')) return 'status-closed';
+            return 'status-open';
+        }
+
+        // Populate filter dropdowns
+        function populateFilters(tickets) {
+            const statuses = [...new Set(tickets.map(t => t.status).filter(Boolean))];
+            const types = [...new Set(tickets.map(t => t.issuetype).filter(Boolean))];
+            
+            const statusFilter = document.getElementById('statusFilter');
+            const typeFilter = document.getElementById('typeFilter');
+            
+            statusFilter.innerHTML = '<option value="">All Statuses</option>';
+            statuses.forEach(status => {
+                statusFilter.innerHTML += `<option value="${status}">${status}</option>`;
+            });
+            
+            typeFilter.innerHTML = '<option value="">All Types</option>';
+            types.forEach(type => {
+                typeFilter.innerHTML += `<option value="${type}">${type}</option>`;
+            });
+        }
+
+        // Filter and search functionality
+        document.getElementById('searchInput').addEventListener('input', filterTickets);
+        document.getElementById('statusFilter').addEventListener('change', filterTickets);
+        document.getElementById('typeFilter').addEventListener('change', filterTickets);
+
+        function filterTickets() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            const statusFilter = document.getElementById('statusFilter').value;
+            const typeFilter = document.getElementById('typeFilter').value;
+            
+            const filtered = currentTickets.filter(ticket => {
+                // Search filter
+                if (searchTerm && !(
+                    ticket.key?.toLowerCase().includes(searchTerm) ||
+                    ticket.summary?.toLowerCase().includes(searchTerm) ||
+                    ticket.assignee?.toLowerCase().includes(searchTerm) ||
+                    ticket.reporter?.toLowerCase().includes(searchTerm)
+                )) {
+                    return false;
+                }
+                
+                // Status filter
+                if (statusFilter && ticket.status !== statusFilter) {
+                    return false;
+                }
+                
+                // Type filter
+                if (typeFilter && ticket.issuetype !== typeFilter) {
+                    return false;
+                }
+                
+                return true;
+            });
+            
+            displayTickets(filtered);
+        }
+
+        // Export functionality
+        document.getElementById('exportBtn').addEventListener('click', async function() {
+            if (!lastQueryParams) {
+                showError('No query parameters available for export');
+                return;
+            }
+
+            const btn = this;
+            const btnText = document.getElementById('exportBtnText');
+            const originalText = btnText.textContent;
+            
+            btn.disabled = true;
+            btnText.textContent = 'Exporting...';
+            
+            try {
+                const payload = {
+                    jira: {
+                        token: lastQueryParams.token,
+                        server: lastQueryParams.server,
+                        User: lastQueryParams.user,
+                        timeFrom: lastQueryParams.timeFrom,
+                        timeTo: lastQueryParams.timeTo,
+                        closeticket: lastQueryParams.includeClosedTickets
+                    }
+                };
+
+                const response = await fetch('/jira_updater/export', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Export failed: ${response.status}`);
+                }
+
+                const result = await response.json();
+                
+                if (result.downloadfile) {
+                    const downloadUrl = `/download?file_name=${encodeURIComponent(result.downloadfile)}`;
+                    const link = document.createElement('a');
+                    link.href = downloadUrl;
+                    link.download = result.downloadfile;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }
+                
+            } catch (error) {
+                showError(error.message || 'Failed to export tickets');
+            } finally {
+                btn.disabled = false;
+                btnText.textContent = originalText;
+            }
+        });
+
+        // Utility functions
+        function setLoading(loading) {
+            const loadingState = document.getElementById('loadingState');
+            const queryBtn = document.getElementById('queryBtn');
+            const queryBtnText = document.getElementById('queryBtnText');
+            const querySpinner = document.getElementById('querySpinner');
+            
+            if (loading) {
+                loadingState.classList.remove('hidden');
+                queryBtn.disabled = true;
+                queryBtnText.textContent = 'Querying...';
+                querySpinner.classList.remove('hidden');
+                document.getElementById('resultsSection').classList.add('hidden');
+            } else {
+                loadingState.classList.add('hidden');
+                queryBtn.disabled = false;
+                queryBtnText.textContent = 'Query Tickets';
+                querySpinner.classList.add('hidden');
+            }
+        }
+
+        function showError(message) {
+            document.getElementById('errorMessage').textContent = message;
+            document.getElementById('errorAlert').classList.remove('hidden');
+        }
+
+        function hideError() {
+            document.getElementById('errorAlert').classList.add('hidden');
+        }
+
+        function updateResultsCount(filtered, total) {
+            const countEl = document.getElementById('resultsCount');
+            if (filtered === total) {
+                countEl.textContent = `Tickets (${total})`;
+            } else {
+                countEl.textContent = `Tickets (${filtered} of ${total})`;
+            }
+        }
+    </script>
+</body>
+</html>
