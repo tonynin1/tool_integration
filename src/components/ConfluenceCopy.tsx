@@ -44,7 +44,17 @@ export default function ConfluenceCopy() {
   const [spaces, setSpaces] = useState<ConfluenceSpace[]>([]);
   const [spacesLoading, setSpacesLoading] = useState(false);
   const [writableSpaces, setWritableSpaces] = useState<string[]>([]);
+  const [defaultSpaces] = useState<ConfluenceSpace[]>([
+    { key: 'EBR', name: 'Engineering Base Release' },
+    { key: 'TECH', name: 'Technical Documentation' },
+    { key: 'PROJ', name: 'Project Documentation' }
+  ]);
   const [result, setResult] = useState<string | null>(null);
+  const [targetSpaceInput, setTargetSpaceInput] = useState<string>('');
+  const [targetSpaceValidating, setTargetSpaceValidating] = useState(false);
+  const [targetSpaceValid, setTargetSpaceValid] = useState<boolean | null>(null);
+  const [targetSpaceExists, setTargetSpaceExists] = useState<boolean | null>(null);
+  const [targetSpaceConfirmed, setTargetSpaceConfirmed] = useState(false);
   const {
     token: { colorBgContainer, borderRadiusLG },
   } = theme.useToken();
@@ -57,21 +67,29 @@ export default function ConfluenceCopy() {
     setSpacesLoading(true);
     try {
       const spacesList = await confluenceApi.getAccessibleSpaces();
-      setSpaces(spacesList);
 
-      // Test write permissions for first few spaces
-      const writeableKeys: string[] = [];
-      for (const space of spacesList.slice(0, 10)) { // Test first 10 spaces only
-        const canWrite = await confluenceApi.testWritePermission(space.key);
-        if (canWrite) {
-          writeableKeys.push(space.key);
+      // Merge with default spaces, prioritizing fetched spaces
+      const allSpaces = [...spacesList];
+      defaultSpaces.forEach(defaultSpace => {
+        if (!spacesList.find(s => s.key === defaultSpace.key)) {
+          allSpaces.push(defaultSpace);
         }
-      }
-      setWritableSpaces(writeableKeys);
+      });
+
+      setSpaces(allSpaces);
+
+      // Skip write permission testing during initial load
+      // We'll only test when user specifically enters a space
+      setWritableSpaces([]); // Empty for now
+
     } catch (error) {
-      notification.error({
-        message: 'Failed to load spaces',
-        description: error instanceof Error ? error.message : 'Unknown error'
+      // Fallback to default spaces if API fails
+      setSpaces(defaultSpaces);
+      setWritableSpaces([]);
+
+      notification.warning({
+        message: 'Using default spaces',
+        description: 'Could not load all spaces from server. Using common spaces as fallback.'
       });
     } finally {
       setSpacesLoading(false);
@@ -79,6 +97,15 @@ export default function ConfluenceCopy() {
   };
 
   const handleCopy = async (values: FormValues) => {
+    if (!targetSpaceConfirmed) {
+      notification.error({
+        message: 'Target Space Not Confirmed',
+        description: 'Please enter and confirm a writable Target Space before copying',
+        duration: 5
+      });
+      return;
+    }
+
     setLoading(true);
     setResult(null);
 
@@ -101,8 +128,11 @@ export default function ConfluenceCopy() {
         duration: 5
       });
 
-      // Reset form after successful copy
+      // Reset form and states after successful copy
       form.resetFields();
+      setTargetSpaceInput('');
+      setTargetSpaceValid(null);
+      setTargetSpaceConfirmed(false);
     } catch (error) {
       notification.error({
         message: 'Failed to copy page',
@@ -127,6 +157,60 @@ export default function ConfluenceCopy() {
     return Promise.resolve();
   };
 
+  const validateTargetSpace = async (spaceKey: string): Promise<boolean> => {
+    if (!spaceKey) return false;
+
+    setTargetSpaceValidating(true);
+    try {
+      console.log(`React app: Validating target space: ${spaceKey}`);
+      // Only check if space exists - no write permission test
+      const exists = await confluenceApi.checkSpaceExists(spaceKey);
+      console.log(`React app: Space ${spaceKey} exists:`, exists);
+      setTargetSpaceExists(exists);
+      setTargetSpaceValid(exists); // If space exists, consider it valid
+
+      return exists;
+    } catch (error: any) {
+      console.error(`React app: Error validating space ${spaceKey}:`, error);
+      setTargetSpaceExists(false);
+      setTargetSpaceValid(false);
+      return false;
+    } finally {
+      setTargetSpaceValidating(false);
+    }
+  };
+
+  const handleTargetSpaceChange = async (value: string) => {
+    setTargetSpaceInput(value.toUpperCase());
+    setTargetSpaceConfirmed(false);
+    setTargetSpaceValid(null);
+
+    if (value.trim()) {
+      await validateTargetSpace(value.trim().toUpperCase());
+    }
+  };
+
+  const handleTargetSpaceConfirm = () => {
+    if (targetSpaceInput) {
+      if (targetSpaceValid) {
+        // Space exists and is confirmed
+        setTargetSpaceConfirmed(true);
+        form.setFieldsValue({ targetSpaceKey: targetSpaceInput });
+        notification.success({
+          message: 'Target Space Confirmed',
+          description: `${targetSpaceInput} space exists and is ready to use`,
+          duration: 3
+        });
+      } else {
+        notification.error({
+          message: 'Cannot Confirm Target Space',
+          description: `Space "${targetSpaceInput}" does not exist or is not accessible`,
+          duration: 3
+        });
+      }
+    }
+  };
+
   const handleSourceUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const url = e.target.value;
     if (url) {
@@ -135,6 +219,20 @@ export default function ConfluenceCopy() {
         form.setFieldsValue({
           newTitle: `${extractedTitle} - Copy`
         });
+      }
+
+      // Auto-suggest target space from source URL if not already confirmed
+      try {
+        const urlPath = url.replace('https://inside-docupedia.bosch.com/confluence', '');
+        const parts = urlPath.split('/');
+        const sourceSpaceKey = parts[3]; // Extract space key from URL
+
+        if (sourceSpaceKey && !targetSpaceConfirmed) {
+          setTargetSpaceInput(sourceSpaceKey);
+          validateTargetSpace(sourceSpaceKey);
+        }
+      } catch (error) {
+        // Ignore extraction errors, keep default behavior
       }
     }
   };
@@ -218,47 +316,76 @@ export default function ConfluenceCopy() {
                     label={
                       <Space>
                         <span>Target Space</span>
-                        <Tooltip title="The Confluence space where the copy will be created">
+                        <Tooltip title="Enter the Confluence space key where the copy will be created">
                           <InfoCircleOutlined style={{ color: '#666' }} />
                         </Tooltip>
                       </Space>
                     }
-                    name="targetSpaceKey"
-                    rules={[{ required: true, message: 'Please select a target space' }]}
                   >
-                    <Select
-                      placeholder="Select a space you can write to"
-                      loading={spacesLoading}
-                      showSearch
-                      filterOption={(input, option) =>
-                        (option?.children as any)?.props?.children?.[0]?.toLowerCase()?.includes(input.toLowerCase()) ||
-                        (option?.children as any)?.props?.children?.[2]?.props?.children?.toLowerCase()?.includes(input.toLowerCase())
-                      }
-                    >
-                      {spaces.map(space => (
-                        <Option
-                          key={space.key}
-                          value={space.key}
-                          disabled={!writableSpaces.includes(space.key)}
-                        >
-                          <Space>
-                            <span>{space.key}</span>
-                            <Text type="secondary">- {space.name}</Text>
-                            {writableSpaces.includes(space.key) ? (
-                              <Text type="success">
-                                <CheckCircleOutlined style={{ marginRight: 4 }} />
-                                Writable
-                              </Text>
-                            ) : (
-                              <Text type="warning">
-                                <ExclamationCircleOutlined style={{ marginRight: 4 }} />
-                                Read-only
-                              </Text>
-                            )}
-                          </Space>
-                        </Option>
-                      ))}
-                    </Select>
+                    <Space.Compact style={{ width: '100%' }}>
+                      <Input
+                        placeholder="Enter space key (e.g., EBR, TECH)"
+                        value={targetSpaceInput}
+                        onChange={(e) => handleTargetSpaceChange(e.target.value)}
+                        style={{ flex: 1 }}
+                        status={
+                          targetSpaceValidating ? undefined :
+                          targetSpaceValid === false ? 'error' : undefined
+                        }
+                        suffix={
+                          targetSpaceValidating ? (
+                            <span style={{ color: '#1890ff' }}>Checking...</span>
+                          ) : targetSpaceValid === true ? (
+                            <CheckCircleOutlined style={{ color: '#52c41a' }} />
+                          ) : targetSpaceValid === false ? (
+                            <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />
+                          ) : null
+                        }
+                      />
+                      <Button
+                        type="primary"
+                        onClick={handleTargetSpaceConfirm}
+                        disabled={targetSpaceConfirmed || (!targetSpaceExists && !targetSpaceValidating)}
+                        loading={targetSpaceValidating}
+                      >
+                        {targetSpaceConfirmed ? 'Confirmed' : 'Confirm'}
+                      </Button>
+                    </Space.Compact>
+
+                    {targetSpaceExists === false && targetSpaceInput && (
+                      <div style={{ marginTop: 8 }}>
+                        <Text type="danger" style={{ fontSize: '12px' }}>
+                          <ExclamationCircleOutlined style={{ marginRight: 4 }} />
+                          Space "{targetSpaceInput}" does not exist or is not accessible
+                        </Text>
+                      </div>
+                    )}
+
+                    {targetSpaceExists === true && targetSpaceInput && (
+                      <div style={{ marginTop: 8 }}>
+                        <Text type="success" style={{ fontSize: '12px' }}>
+                          <CheckCircleOutlined style={{ marginRight: 4 }} />
+                          Space "{targetSpaceInput}" exists and is ready to use
+                        </Text>
+                      </div>
+                    )}
+
+                    {targetSpaceConfirmed && (
+                      <div style={{ marginTop: 8 }}>
+                        <Text type="success" style={{ fontSize: '12px' }}>
+                          <CheckCircleOutlined style={{ marginRight: 4 }} />
+                          Target space "{targetSpaceInput}" confirmed and ready
+                        </Text>
+                      </div>
+                    )}
+                  </Form.Item>
+
+                  <Form.Item
+                    name="targetSpaceKey"
+                    hidden
+                    rules={[{ required: true, message: 'Please confirm a target space' }]}
+                  >
+                    <Input />
                   </Form.Item>
 
                   <Form.Item
@@ -284,9 +411,12 @@ export default function ConfluenceCopy() {
                       icon={<CopyOutlined />}
                       size="large"
                       loading={loading}
+                      disabled={!targetSpaceConfirmed}
                       block
                     >
-                      {loading ? 'Copying Page...' : 'Copy Page'}
+                      {loading ? 'Copying Page...' :
+                       !targetSpaceConfirmed ? 'Confirm Target Space First' :
+                       'Copy Page'}
                     </Button>
                   </Form.Item>
                 </Form>
@@ -336,7 +466,8 @@ export default function ConfluenceCopy() {
                   <div>
                     <Title level={5}>3. Target Space</Title>
                     <Text type="secondary">
-                      Choose a space where you have write permissions. Only writable spaces are enabled.
+                      Enter the space key (e.g., EBR, TECH) where you want to copy the page.
+                      The system will check if it's writable, then you must confirm it before proceeding.
                     </Text>
                   </div>
 
@@ -369,6 +500,15 @@ export default function ConfluenceCopy() {
                   <div style={{ marginTop: 16 }}>
                     <Text style={{ fontSize: '12px' }}>
                       ✅ Found {writableSpaces.length} writable space(s)
+                      {writableSpaces.includes('EBR') && ' (EBR set as default)'}
+                    </Text>
+                  </div>
+                )}
+
+                {spaces.length === 0 && !spacesLoading && (
+                  <div style={{ marginTop: 16 }}>
+                    <Text style={{ fontSize: '12px' }} type="warning">
+                      ⚠️ Using fallback spaces. Check your connection.
                     </Text>
                   </div>
                 )}

@@ -1,9 +1,11 @@
-const CONFLUENCE_BASE_URL = 'https://inside-docupedia.bosch.com/confluence';
-const CONFLUENCE_PAT = "MzEyNTMxNTkwMjQ4OkuYP1fwScED9vGXzXCSLkdIqx+/";
+const CONFLUENCE_BASE_URL = process.env.REACT_APP_CONFLUENCE_BASE_URL || '/confluence';
+const CONFLUENCE_PAT = process.env.REACT_APP_CONFLUENCE_PAT || '';
+const PROXY_SERVER = process.env.REACT_APP_PROXY_SERVER || '';
 
 const confluenceHeaders = {
   'Authorization': `Bearer ${CONFLUENCE_PAT}`,
-  'Content-Type': 'application/json'
+  'Content-Type': 'application/json',
+  'X-Atlassian-Token': 'no-check'
 };
 
 export interface ConfluencePageRequest {
@@ -45,13 +47,18 @@ export interface ConfluenceSpace {
 
 class ConfluenceApiService {
   private async confluenceFetch(url: string, options: RequestInit = {}) {
-    const response = await fetch(url, {
+    // Add proxy configuration for cross-origin requests
+    const fetchOptions: RequestInit = {
       ...options,
       headers: {
         ...confluenceHeaders,
         ...options.headers,
       },
-    });
+      mode: 'cors',
+      credentials: 'omit'
+    };
+
+    const response = await fetch(url, fetchOptions);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -62,13 +69,35 @@ class ConfluenceApiService {
   }
 
   private extractSpaceAndTitle(url: string) {
-    // Extract from URL like: /confluence/display/EBR/OD+CHERY+T28+EU+BL05+RC6.1
-    const urlPath = url.replace(CONFLUENCE_BASE_URL, '');
-    const parts = urlPath.split('/');
-    const spaceKey = parts[3]; // EBR
-    const titlePart = parts[4]; // OD+CHERY+T28+EU+BL05+RC6.1
+    // Extract from URL like: https://inside-docupedia.bosch.com/confluence/display/EBR/OD+CHERY+T28+EU+BL05+RC6.1
+    console.log('Extracting from URL:', url);
+
+    if (!url.includes('/confluence/display/')) {
+      throw new Error(`Invalid Confluence URL format. Expected format: https://inside-docupedia.bosch.com/confluence/display/SPACE/PageTitle but got: ${url}`);
+    }
+
+    // Find the position of '/display/' and extract from there
+    const displayIndex = url.indexOf('/display/');
+    const pathAfterDisplay = url.substring(displayIndex + '/display/'.length);
+    const parts = pathAfterDisplay.split('/');
+
+    console.log('Path after /display/:', pathAfterDisplay);
+    console.log('Parts:', parts);
+
+    if (parts.length < 2) {
+      throw new Error(`URL does not contain space and title. Expected format: .../display/SPACE/TITLE but got: ${pathAfterDisplay}`);
+    }
+
+    const spaceKey = parts[0]; // EBR
+    const titlePart = parts[1]; // GWM+FVE0120+BL02+V5
+
+    if (!spaceKey || !titlePart) {
+      throw new Error(`Could not extract space key or title from URL. Space: "${spaceKey}", Title: "${titlePart}"`);
+    }
+
     const title = decodeURIComponent(titlePart.replace(/\+/g, ' '));
 
+    console.log('Extracted - Space:', spaceKey, 'Title:', title);
     return { spaceKey, title };
   }
 
@@ -150,20 +179,53 @@ class ConfluenceApiService {
     );
   }
 
-  async testWritePermission(spaceKey: string): Promise<boolean> {
-    const testPageData = {
-      type: "page",
-      title: `Test Page - ${Date.now()}`,
-      space: { key: spaceKey },
-      body: {
-        storage: {
-          value: "<p>Test page for write permission check. Will be deleted immediately.</p>",
-          representation: "storage"
-        }
-      }
-    };
-
+  async checkSpaceExists(spaceKey: string): Promise<boolean> {
     try {
+      console.log(`Checking if space ${spaceKey} exists...`);
+      const response = await this.confluenceFetch(
+        `${CONFLUENCE_BASE_URL}/rest/api/space/${spaceKey}`
+      );
+      console.log(`Space ${spaceKey} exists:`, response);
+      return true;
+    } catch (error: any) {
+      console.log(`Space ${spaceKey} check failed:`, error.message);
+      return false;
+    }
+  }
+
+  async testWritePermission(spaceKey: string): Promise<boolean> {
+    try {
+      // First, check if the space exists by trying to get its information
+      const spaceResponse = await this.confluenceFetch(
+        `${CONFLUENCE_BASE_URL}/rest/api/space/${spaceKey}`
+      );
+
+      if (!spaceResponse) {
+        return false;
+      }
+
+      // Try a lightweight permission check first - get user permissions for the space
+      try {
+        await this.confluenceFetch(
+          `${CONFLUENCE_BASE_URL}/rest/api/user/current`
+        );
+      } catch (userError) {
+        // If we can't get current user, fall back to test page creation
+      }
+
+      // Test actual write permission with a test page
+      const testPageData = {
+        type: "page",
+        title: `Permission Test - ${Date.now()}`,
+        space: { key: spaceKey },
+        body: {
+          storage: {
+            value: "<p>Permission test page - will be deleted immediately.</p>",
+            representation: "storage"
+          }
+        }
+      };
+
       const result = await this.confluenceFetch(
         `${CONFLUENCE_BASE_URL}/rest/api/content`,
         {
@@ -172,14 +234,20 @@ class ConfluenceApiService {
         }
       );
 
-      // Clean up - delete test page
-      await this.confluenceFetch(
-        `${CONFLUENCE_BASE_URL}/rest/api/content/${result.id}`,
-        { method: 'DELETE' }
-      );
+      // Clean up - delete test page immediately
+      try {
+        await this.confluenceFetch(
+          `${CONFLUENCE_BASE_URL}/rest/api/content/${result.id}`,
+          { method: 'DELETE' }
+        );
+      } catch (deleteError) {
+        // Log delete error but don't fail the permission check
+        console.warn('Failed to clean up test page:', deleteError);
+      }
 
       return true;
-    } catch (error) {
+    } catch (error: any) {
+      console.log('Write permission check failed for space', spaceKey, ':', error.message);
       return false;
     }
   }

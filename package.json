@@ -3,16 +3,16 @@
   "version": "1.0.0",
   "private": true,
   "dependencies": {
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-scripts": "5.0.1",
-    "axios": "^1.4.0",
-    "date-fns": "^2.29.0",
-    "antd": "^5.0.0",
     "@ant-design/icons": "^5.0.0",
+    "@types/node": "^18.0.0",
     "@types/react": "^18.0.0",
     "@types/react-dom": "^18.0.0",
-    "@types/node": "^18.0.0",
+    "antd": "^5.0.0",
+    "axios": "^1.4.0",
+    "date-fns": "^2.29.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-scripts": "^5.0.1",
     "typescript": "^4.9.0"
   },
   "scripts": {
@@ -39,5 +39,5 @@
       "last 1 safari version"
     ]
   },
-  "proxy": "http://intauto.app.bosch.com:8001"
+  "proxy": "https://inside-docupedia.bosch.com"
 }
