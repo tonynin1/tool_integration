@@ -46,22 +46,101 @@ export interface ConfluenceSpace {
 }
 
 class ConfluenceApiService {
+  private xsrfToken: string | null = null;
+
+  private async getXsrfToken(): Promise<string> {
+    try {
+      // Get XSRF token by making a simple GET request to user endpoint
+      const response = await fetch(`${CONFLUENCE_BASE_URL}/rest/api/user/current`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${CONFLUENCE_PAT}`,
+          'Accept': 'application/json'
+        },
+        credentials: 'include'
+      });
+
+      // Check for XSRF token in response headers
+      const xsrfFromHeader = response.headers.get('X-XSRF-Token') ||
+                           response.headers.get('X-Atlassian-Token') ||
+                           response.headers.get('X-AUSERNAME');
+
+      if (xsrfFromHeader && xsrfFromHeader !== 'anonymous') {
+        console.log('Found XSRF token in headers:', xsrfFromHeader);
+        return xsrfFromHeader;
+      }
+
+      // If no token in headers, try to extract from Set-Cookie
+      const setCookie = response.headers.get('set-cookie');
+      if (setCookie) {
+        const xsrfMatch = setCookie.match(/XSRF-TOKEN=([^;]+)/);
+        if (xsrfMatch) {
+          console.log('Found XSRF token in cookies:', xsrfMatch[1]);
+          return xsrfMatch[1];
+        }
+      }
+
+      console.log('No XSRF token found, using no-check');
+      return 'no-check';
+    } catch (error) {
+      console.warn('Failed to get XSRF token:', error);
+      return 'no-check';
+    }
+  }
+
   private async confluenceFetch(url: string, options: RequestInit = {}) {
-    // Add proxy configuration for cross-origin requests
+    const isWriteOperation = options.method && ['POST', 'PUT', 'DELETE'].includes(options.method.toUpperCase());
+
+    // Get fresh XSRF token for write operations
+    if (isWriteOperation && !this.xsrfToken) {
+      this.xsrfToken = await this.getXsrfToken();
+    }
+
+    const headers = {
+      ...confluenceHeaders,
+      ...options.headers,
+    };
+
+    // Use the obtained XSRF token for write operations
+    if (isWriteOperation && this.xsrfToken) {
+      headers['X-Atlassian-Token'] = this.xsrfToken;
+    }
+
     const fetchOptions: RequestInit = {
       ...options,
-      headers: {
-        ...confluenceHeaders,
-        ...options.headers,
-      },
-      mode: 'cors',
-      credentials: 'omit'
+      headers,
+      credentials: 'include' // Include cookies for session management
     };
+
+    console.log(`Confluence ${options.method || 'GET'} request:`, {
+      url: url.replace(CONFLUENCE_BASE_URL, ''),
+      hasXsrfToken: !!this.xsrfToken,
+      xsrfToken: isWriteOperation ? this.xsrfToken : 'not needed'
+    });
 
     const response = await fetch(url, fetchOptions);
 
     if (!response.ok) {
       const errorText = await response.text();
+
+      // If XSRF error, clear token and retry once
+      if (response.status === 403 && errorText.includes('XSRF') && isWriteOperation && this.xsrfToken !== 'retried') {
+        console.log('XSRF error, getting fresh token and retrying...');
+        this.xsrfToken = null;
+        this.xsrfToken = await this.getXsrfToken();
+
+        // Retry with new token
+        if (this.xsrfToken !== 'no-check') {
+          const retryHeaders = { ...headers, 'X-Atlassian-Token': this.xsrfToken };
+          const retryResponse = await fetch(url, { ...fetchOptions, headers: retryHeaders });
+
+          if (retryResponse.ok) {
+            return retryResponse.json();
+          }
+        }
+      }
+
+      console.error(`Confluence API error ${response.status}:`, errorText);
       throw new Error(`HTTP ${response.status}: ${errorText}`);
     }
 
@@ -144,25 +223,21 @@ class ConfluenceApiService {
   }
 
   async copyPage(request: ConfluencePageRequest): Promise<ConfluencePageResponse> {
-    // Step 1: Get source page content
-    const sourcePage = await this.getPageByUrl(request.sourceUrl);
+    // Use backend API to avoid XSRF issues
+    const response = await fetch('http://localhost:3001/api/copy-page', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request)
+    });
 
-    // Step 2: Get parent page ID if parent URL provided
-    let parentId: string | undefined;
-    if (request.parentUrl) {
-      const parentPage = await this.getPageByUrl(request.parentUrl);
-      parentId = parentPage.id;
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || `HTTP ${response.status}`);
     }
 
-    // Step 3: Create new page with copied content
-    const newPage = await this.createPage(
-      request.targetSpaceKey,
-      request.newTitle,
-      sourcePage.body.storage.value,
-      parentId
-    );
-
-    return newPage;
+    return response.json();
   }
 
   async getAccessibleSpaces(): Promise<ConfluenceSpace[]> {
