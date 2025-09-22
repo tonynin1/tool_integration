@@ -1,6 +1,5 @@
 const CONFLUENCE_BASE_URL = process.env.REACT_APP_CONFLUENCE_BASE_URL || '/confluence';
 const CONFLUENCE_PAT = process.env.REACT_APP_CONFLUENCE_PAT || '';
-const PROXY_SERVER = process.env.REACT_APP_PROXY_SERVER || '';
 
 const confluenceHeaders = {
   'Authorization': `Bearer ${CONFLUENCE_PAT}`,
