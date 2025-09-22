@@ -1,8 +1,35 @@
-import React from 'react';
-import { ConfigProvider } from 'antd';
+import React, { useState } from 'react';
+import { ConfigProvider, Tabs } from 'antd';
+import { CopyOutlined, EyeOutlined, BookOutlined } from '@ant-design/icons';
 import ConfluenceCopy from './components/ConfluenceCopy';
+import ConfluenceViewer from './components/ConfluenceViewer';
 
 function App() {
+  const [activeTab, setActiveTab] = useState('viewer');
+
+  const tabItems = [
+    {
+      key: 'copy',
+      label: (
+        <span>
+          <CopyOutlined />
+          Copy Page
+        </span>
+      ),
+      children: <ConfluenceCopy />
+    },
+    {
+      key: 'viewer',
+      label: (
+        <span>
+          <EyeOutlined /> View Page
+        </span>
+      ),
+      children: <ConfluenceViewer />
+    },
+  
+  ];
+
   return (
     <ConfigProvider
       theme={{
@@ -12,8 +39,20 @@ function App() {
         },
       }}
     >
-      <div className="App">
-        <ConfluenceCopy />
+      <div className="App" style={{ minHeight: '100vh' }}>
+        <Tabs
+          activeKey={activeTab}
+          onChange={setActiveTab}
+          items={tabItems}
+          size="large"
+          style={{ height: '100vh' }}
+          tabBarStyle={{
+            background: '#001529',
+            color: 'white',
+            margin: 0,
+            paddingLeft: '24px'
+          }}
+        />
       </div>
     </ConfigProvider>
   );

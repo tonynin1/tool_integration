@@ -168,6 +168,44 @@ const server = http.createServer(async (req, res) => {
         }
       });
 
+    } else if (parsedUrl.pathname === '/api/get-page' && req.method === 'POST') {
+      // Handle get page request
+      let body = '';
+      req.on('data', chunk => body += chunk);
+      req.on('end', async () => {
+        try {
+          const { spaceKey, title } = JSON.parse(body);
+
+          console.log('Get page request:', { spaceKey, title });
+
+          const pageResponse = await makeRequest(
+            `${CONFLUENCE_BASE_URL}/rest/api/content?spaceKey=${spaceKey}&title=${encodeURIComponent(title)}&expand=body.storage,space,version`
+          );
+
+          if (pageResponse.status !== 200) {
+            console.log('Page response data:', pageResponse.data);
+            throw new Error(`Failed to get page: ${pageResponse.status} - ${pageResponse.data}`);
+          }
+
+          const pageData = JSON.parse(pageResponse.data);
+          const page = pageData.results[0];
+
+          if (!page) {
+            throw new Error('Page not found');
+          }
+
+          console.log('Page retrieved successfully:', page.id);
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(page));
+
+        } catch (error) {
+          console.error('Get page error:', error);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: error.message }));
+        }
+      });
+
     } else if (parsedUrl.pathname.startsWith('/api/confluence/')) {
       // Proxy other Confluence API calls
       const confluencePath = parsedUrl.pathname.replace('/api/confluence', '');
@@ -210,6 +248,7 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`🚀 Simple Confluence backend running on http://localhost:${PORT}`);
   console.log('   Copy page endpoint: POST /api/copy-page');
+  console.log('   Get page endpoint: POST /api/get-page');
   console.log('   Confluence proxy: /api/confluence/*');
   console.log('   No external dependencies required!');
 });
