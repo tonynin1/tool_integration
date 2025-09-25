@@ -3,7 +3,7 @@ import { ConfigProvider, Tabs } from 'antd';
 import { CopyOutlined, EyeOutlined, BookOutlined } from '@ant-design/icons';
 import ConfluenceCopy from './components/ConfluenceCopy';
 import ConfluenceViewer from './components/ConfluenceViewer';
-
+import ConfluenceDateUpdater from './components/ConfluenceDateUpdater';
 function App() {
   const [activeTab, setActiveTab] = useState('viewer');
 
@@ -27,7 +27,15 @@ function App() {
       ),
       children: <ConfluenceViewer />
     },
-  
+    {
+      key: 'updater',
+      label: (
+        <span>
+          <BookOutlined></BookOutlined> Updater
+        </span>
+      ),
+      children: <ConfluenceDateUpdater/>
+    }
   ];
 
   return (
