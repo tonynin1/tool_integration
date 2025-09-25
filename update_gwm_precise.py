@@ -45,6 +45,11 @@ def setup_session():
 def get_page_id_from_url(session, display_url):
     """Extract page ID from Confluence display URL"""
     try:
+        # Clean and decode URL
+        from urllib.parse import unquote
+
+        print(f"🔗 Processing URL: {display_url}")
+
         # Parse URL to get space and page title
         url_parts = display_url.split('/')
         if 'display' not in url_parts:
@@ -52,9 +57,12 @@ def get_page_id_from_url(session, display_url):
 
         display_idx = url_parts.index('display')
         space_key = url_parts[display_idx + 1]
-        page_title = url_parts[display_idx + 2].replace('+', ' ')
+        page_title_encoded = url_parts[display_idx + 2]
 
-        print(f"🔍 Searching for page: '{page_title}' in space: '{space_key}'")
+        # Decode URL encoding and handle + characters
+        page_title = unquote(page_title_encoded).replace('+', ' ')
+
+        print(f"🔍 Extracted - Space: '{space_key}', Title: '{page_title}'")
 
         # Search for the page using CQL
         cql_query = f'space="{space_key}" AND title="{page_title}"'
@@ -338,15 +346,17 @@ def main():
 
     try:
         session = setup_session()
-
+        print('page input: {page_input}')
         # Determine if input is URL or page ID
-        if page_input.startswith('https') and 'display' in page_input:
+        if (page_input.startswith('http') and 'display' in page_input) or (page_input.startswith('https') and 'display' in page_input):
             print("🔗 Input detected as Confluence URL")
             page_id = get_page_id_from_url(session, page_input)
         elif page_input.isdigit():
             print("🔢 Input detected as page ID")
             page_id = page_input
         else:
+            print(f"❌ Invalid input format: '{page_input}'")
+            print("Expected: Confluence URL with 'display' or numeric page ID")
             raise ValueError("Input must be either a Confluence URL (https://...) or a numeric page ID")
 
         # Get current page

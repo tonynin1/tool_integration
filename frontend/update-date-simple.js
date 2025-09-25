@@ -20,16 +20,23 @@ const server = http.createServer(async (req, res) => {
     req.on('data', chunk => body += chunk);
     req.on('end', async () => {
       try {
-        const { pageId, newDate } = JSON.parse(body);
+        const { pageUrl, pageId, newDate } = JSON.parse(body);
 
-        console.log(`📅 Update request: Page ${pageId} → ${newDate}`);
+        // Support both pageUrl (new) and pageId (legacy)
+        const pageInput = pageUrl || pageId;
+
+        if (!pageInput) {
+          throw new Error('Either pageUrl or pageId must be provided');
+        }
+
+        console.log(`📅 Update request: ${pageInput} → ${newDate}`);
 
         // Use the Python script that we know works
         const { spawn } = require('child_process');
 
         const pythonProcess = spawn('python3', [
           '/home/vvo8hc/DaiViet/tool_int/update_gwm_precise.py',
-          pageId,
+          pageInput,
           newDate
         ]);
 
