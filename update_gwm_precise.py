@@ -312,8 +312,8 @@ def update_predecessor_baseline_precise(content, new_baseline_url):
     print(f"📝 New display text: {new_display_text}")
 
     # Pattern to match: <td>...<strong>Predecessor Baseline</strong>...</td><td><a href="OLD_URL">OLD_TEXT</a></td>
-    # More flexible pattern to capture the predecessor baseline link with various td attributes
-    pattern = r'(<td[^>]*><p[^>]*><strong>Predecessor Baseline</strong></p></td><td><a href=")([^"]+)(">)([^<]+)(</a></td>)'
+    # More flexible pattern to capture the predecessor baseline link with various td attributes and styles
+    pattern = r'(<td[^>]*><p[^>]*><strong>Predecessor Baseline</strong></p></td><td[^>]*><a href=")([^"]+)(">)([^<]+)(</a>)'
 
     match = re.search(pattern, content)
 

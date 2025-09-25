@@ -223,7 +223,7 @@ class ConfluenceApiService {
 
   async copyPage(request: ConfluencePageRequest): Promise<ConfluencePageResponse> {
     // Use backend API to avoid XSRF issues
-    const response = await fetch('http://localhost:3001/api/copy-page', {
+    const response = await fetch('http://localhost:3002/api/copy-page', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

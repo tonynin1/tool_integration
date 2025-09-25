@@ -28,7 +28,6 @@ import {
 import { confluenceApi, ConfluencePageRequest, ConfluenceSpace } from "../services/confluenceApi";
 
 const { Title, Text, Paragraph } = Typography;
-const { Option } = Select;
 const { Header, Content } = Layout;
 
 interface FormValues {

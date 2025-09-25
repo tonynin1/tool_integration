@@ -58,7 +58,7 @@ export default function ConfluenceViewer() {
       // Extract space and title from URL
       const { spaceKey, title } = extractSpaceAndTitle(values.pageUrl);
 
-      const response = await fetch(`http://localhost:3001/api/get-page`, {
+      const response = await fetch(`http://localhost:3002/api/get-page`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
