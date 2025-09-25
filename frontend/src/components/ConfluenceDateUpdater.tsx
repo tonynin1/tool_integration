@@ -30,6 +30,11 @@ interface UpdateResult {
   message: string;
   oldDate?: string;
   newDate?: string;
+  oldJiraKey?: string;
+  newJiraKey?: string;
+  oldBaselineUrl?: string;
+  newBaselineUrl?: string;
+  newBaselineText?: string;
   pageTitle?: string;
   version?: number;
 }
@@ -41,20 +46,39 @@ const ConfluenceDateUpdater: React.FC = () => {
 
   const handleSubmit = async (values: {
     pageUrl: string;
-    newDate: any;
+    newDate?: any;
+    newJiraKey?: string;
+    newBaselineUrl?: string;
   }) => {
     setLoading(true);
     setResult(null);
 
     try {
-      const dateString = format(values.newDate.toDate(), 'yyyy-MM-dd');
+      // Prepare the request payload
+      const payload: any = {
+        pageUrl: values.pageUrl,
+      };
+
+      // Add date if provided
+      if (values.newDate) {
+        payload.newDate = format(values.newDate.toDate(), 'yyyy-MM-dd');
+      }
+
+      // Add Jira key if provided
+      if (values.newJiraKey) {
+        payload.newJiraKey = values.newJiraKey.trim();
+      }
+
+      // Add baseline URL if provided
+      if (values.newBaselineUrl) {
+        payload.newBaselineUrl = values.newBaselineUrl.trim();
+      }
 
       message.loading('Updating Confluence page via Python script...', 0);
 
       // Call the simple Node.js server that runs the Python script
-      const response = await axios.post('http://localhost:3002/api/update-date', {
-        pageUrl: values.pageUrl,
-        newDate: dateString,
+      const response = await axios.post('http://localhost:3002/api/update-page', {
+        ...payload
       }, {
         timeout: 30000
       });
@@ -68,6 +92,11 @@ const ConfluenceDateUpdater: React.FC = () => {
           message: response.data.message,
           oldDate: response.data.oldDate,
           newDate: response.data.newDate,
+          oldJiraKey: response.data.oldJiraKey,
+          newJiraKey: response.data.newJiraKey,
+          oldBaselineUrl: response.data.oldBaselineUrl,
+          newBaselineUrl: response.data.newBaselineUrl,
+          newBaselineText: response.data.newBaselineText,
           pageTitle: response.data.pageTitle,
           version: response.data.version,
         });
@@ -114,18 +143,18 @@ const ConfluenceDateUpdater: React.FC = () => {
     <div style={{ padding: '24px', maxWidth: '800px', margin: '0 auto' }}>
       <Card>
         <Title level={2}>
-          <CalendarOutlined /> Confluence Page Date Updater
+          <CalendarOutlined /> Confluence Page Updater
         </Title>
 
         <Paragraph>
-          Update the release date on Confluence pages using the proven Python script backend.
-          This tool specifically targets pages with <code>&lt;time datetime=""&gt;</code> tags
-          for precise updates through the Bosch proxy.
+          Update Confluence pages with multiple types of content using the proven Python script backend.
+          This tool can update release dates, Jira ticket references, and predecessor baseline URLs
+          with precise pattern matching through the Bosch proxy.
         </Paragraph>
 
         <Alert
           message="Server Requirement"
-          description="Make sure the update server is running on port 3002: node update-date-simple.js"
+          description="Make sure the update server is running on port 3002 with the new multi-update API endpoint"
           type="info"
           style={{ marginBottom: 16 }}
           showIcon
@@ -136,10 +165,19 @@ const ConfluenceDateUpdater: React.FC = () => {
         <Form
           form={form}
           layout="vertical"
-          onFinish={handleSubmit}
+          onFinish={(values) => {
+            // Validate that at least one update field is provided
+            if (!values.newDate && !values.newJiraKey && !values.newBaselineUrl) {
+              message.error('Please provide at least one field to update (date, Jira key, or baseline URL)');
+              return;
+            }
+            handleSubmit(values);
+          }}
           initialValues={{
             newDate: undefined,
             pageUrl: '',
+            newJiraKey: '',
+            newBaselineUrl: '',
           }}
         >
           <Form.Item
@@ -167,14 +205,59 @@ const ConfluenceDateUpdater: React.FC = () => {
           </Form.Item>
 
           <Form.Item
-            label="New Release Date"
+            label="New Release Date (Optional)"
             name="newDate"
-            rules={[{ required: true, message: 'Please select a date' }]}
+            help="Leave empty if you don't want to update the release date"
           >
             <DatePicker
               style={{ width: '100%' }}
               format="YYYY-MM-DD"
-              placeholder="Select new release date"
+              placeholder="Select new release date (optional)"
+            />
+          </Form.Item>
+
+          <Form.Item
+            label="New Jira Ticket Key (Optional)"
+            name="newJiraKey"
+            help="Format: PROJECT-NUMBER (e.g., MPCTEGWMA-3000)"
+            rules={[
+              {
+                validator: (_, value) => {
+                  if (!value) return Promise.resolve();
+                  if (/^[A-Z]+-[0-9]+$/.test(value.trim())) {
+                    return Promise.resolve();
+                  }
+                  return Promise.reject(new Error('Please enter a valid Jira key format (PROJECT-NUMBER)'));
+                }
+              }
+            ]}
+          >
+            <Input
+              placeholder="MPCTEGWMA-3000"
+              size="large"
+            />
+          </Form.Item>
+
+          <Form.Item
+            label="New Predecessor Baseline URL (Optional)"
+            name="newBaselineUrl"
+            help="Full Confluence URL of the new predecessor baseline page"
+            rules={[
+              {
+                validator: (_, value) => {
+                  if (!value) return Promise.resolve();
+                  if (validateConfluenceUrl(value.trim())) {
+                    return Promise.resolve();
+                  }
+                  return Promise.reject(new Error('Please enter a valid Confluence display URL'));
+                }
+              }
+            ]}
+          >
+            <Input
+              prefix={<LinkOutlined />}
+              placeholder="https://inside-docupedia.bosch.com/confluence/display/EBR/GWM+FVE0120+BL02+V7.0"
+              size="large"
             />
           </Form.Item>
 
@@ -186,7 +269,7 @@ const ConfluenceDateUpdater: React.FC = () => {
                 loading={loading}
                 icon={<CalendarOutlined />}
               >
-                Update Release Date
+                Update Page Content
               </Button>
 
               <Button
@@ -211,8 +294,25 @@ const ConfluenceDateUpdater: React.FC = () => {
                 description={
                   <div>
                     <p><strong>Page:</strong> {result.pageTitle}</p>
-                    <p><strong>Previous Date:</strong> {result.oldDate}</p>
-                    <p><strong>New Date:</strong> {result.newDate}</p>
+                    {result.oldDate && result.newDate && (
+                      <>
+                        <p><strong>Previous Date:</strong> {result.oldDate}</p>
+                        <p><strong>New Date:</strong> {result.newDate}</p>
+                      </>
+                    )}
+                    {result.oldJiraKey && result.newJiraKey && (
+                      <>
+                        <p><strong>Previous Jira Key:</strong> {result.oldJiraKey}</p>
+                        <p><strong>New Jira Key:</strong> {result.newJiraKey}</p>
+                      </>
+                    )}
+                    {result.oldBaselineUrl && result.newBaselineUrl && (
+                      <>
+                        <p><strong>Previous Baseline:</strong> {result.oldBaselineUrl}</p>
+                        <p><strong>New Baseline:</strong> {result.newBaselineUrl}</p>
+                        {result.newBaselineText && <p><strong>Baseline Text:</strong> {result.newBaselineText}</p>}
+                      </>
+                    )}
                     <p><strong>New Version:</strong> {result.version}</p>
                   </div>
                 }
@@ -234,7 +334,7 @@ const ConfluenceDateUpdater: React.FC = () => {
 
         <Divider />
 
-        <Card size="small" type="inner" title="How to get the Confluence URL">
+        <Card size="small" type="inner" title="How to use this tool">
           <Paragraph>
             <Text strong>Step 1:</Text> Navigate to your Confluence page in your browser
           </Paragraph>
@@ -243,7 +343,16 @@ const ConfluenceDateUpdater: React.FC = () => {
             <code>https://inside-docupedia.bosch.com/confluence/display/SPACE/Page+Title</code>)
           </Paragraph>
           <Paragraph>
-            <Text strong>Step 3:</Text> Paste it in the URL field above - that's it! No need to find page IDs anymore.
+            <Text strong>Step 3:</Text> Paste the URL in the first field above
+          </Paragraph>
+          <Paragraph>
+            <Text strong>Step 4:</Text> Fill in any combination of the optional fields:
+            <br />• Release date: Updates <code>&lt;time datetime=""&gt;</code> tags
+            <br />• Jira ticket key: Updates Jira references in the page
+            <br />• Baseline URL: Updates predecessor baseline links with auto-extracted text
+          </Paragraph>
+          <Paragraph>
+            <Text strong>Step 5:</Text> Click "Update Page Content" - at least one optional field must be provided
           </Paragraph>
         </Card>
       </Card>

@@ -8,12 +8,28 @@ import requests
 import json
 import re
 import sys
+import time
 from datetime import datetime
 
 # Configuration
 PROXY_SERVER = "http://rb-proxy-apac.bosch.com:8080"
 CONFLUENCE_BASE_URL = "https://inside-docupedia.bosch.com/confluence"
 CONFLUENCE_PAT = "MzEyNTMxNTkwMjQ4OkuYP1fwScED9vGXzXCSLkdIqx+/"
+
+def retry_request(func, *args, max_retries=3, delay=2, **kwargs):
+    """
+    Retry wrapper for network requests that may fail due to proxy issues
+    """
+    for attempt in range(max_retries):
+        try:
+            return func(*args, **kwargs)
+        except (requests.exceptions.ProxyError, requests.exceptions.ConnectionError) as e:
+            if attempt == max_retries - 1:  # Last attempt
+                raise e
+            print(f"🔄 Network error on attempt {attempt + 1}/{max_retries}: {str(e)}")
+            print(f"⏰ Retrying in {delay} seconds...")
+            time.sleep(delay)
+            delay *= 1.5  # Exponential backoff
 
 def setup_session():
     """Set up requests session with proxy and auth"""
@@ -74,7 +90,7 @@ def get_page_id_from_url(session, display_url):
         }
 
         print(f"🌐 Making search request...")
-        response = session.get(search_url, params=params, timeout=30)
+        response = retry_request(session.get, search_url, params=params, timeout=30)
 
         if response.status_code == 401:
             print("🔑 Trying Basic auth...")
@@ -109,7 +125,7 @@ def get_page(session, page_id):
     }
 
     print(f"📄 Fetching page {page_id}...")
-    response = session.get(url, params=params, timeout=30)
+    response = retry_request(session.get, url, params=params, timeout=30)
 
     if response.status_code == 401:
         print("🔑 Trying Basic auth...")
@@ -144,7 +160,7 @@ def update_page(session, page_id, title, content, version):
     }
 
     print(f"💾 Updating page to version {version + 1}...")
-    response = session.put(url, json=update_data, timeout=30)
+    response = retry_request(session.put, url, json=update_data, timeout=30)
 
     if response.status_code == 401:
         print("🔑 Trying Basic auth for update...")
@@ -267,58 +283,156 @@ def update_jira_ticket_precise(content, new_jira_key):
 
         return content, None
 
+def extract_page_title_from_url(url):
+    """Extract page title from Confluence URL for display"""
+    try:
+        from urllib.parse import unquote
+
+        url_parts = url.split('/')
+        if 'display' not in url_parts:
+            return url  # Return original if not a display URL
+
+        display_idx = url_parts.index('display')
+        if display_idx + 2 < len(url_parts):
+            page_title_encoded = url_parts[display_idx + 2]
+            page_title = unquote(page_title_encoded).replace('+', ' ')
+            return page_title
+        return url
+    except:
+        return url
+
+def update_predecessor_baseline_precise(content, new_baseline_url):
+    """Update the predecessor baseline URL and text"""
+    print(f"🔗 Looking for predecessor baseline references...")
+
+    # Extract display text from the new URL
+    new_display_text = extract_page_title_from_url(new_baseline_url)
+
+    print(f"📝 New baseline URL: {new_baseline_url}")
+    print(f"📝 New display text: {new_display_text}")
+
+    # Pattern to match: <td>...<strong>Predecessor Baseline</strong>...</td><td><a href="OLD_URL">OLD_TEXT</a></td>
+    # More flexible pattern to capture the predecessor baseline link with various td attributes
+    pattern = r'(<td[^>]*><p[^>]*><strong>Predecessor Baseline</strong></p></td><td><a href=")([^"]+)(">)([^<]+)(</a></td>)'
+
+    match = re.search(pattern, content)
+
+    if match:
+        old_url = match.group(2)
+        old_text = match.group(4)
+
+        print(f"✅ Found predecessor baseline:")
+        print(f"   - Current URL: {old_url}")
+        print(f"   - Current text: {old_text}")
+        print(f"🔄 Updating to:")
+        print(f"   - New URL: {new_baseline_url}")
+        print(f"   - New text: {new_display_text}")
+
+        # Show context around the match
+        start_pos = max(0, match.start() - 100)
+        end_pos = min(len(content), match.end() + 100)
+        context = content[start_pos:end_pos]
+        print(f"📍 Context: ...{context.replace(chr(10), ' ').replace(chr(9), ' ')}...")
+
+        # Perform the replacement - update both URL and display text
+        updated_content = re.sub(
+            pattern,
+            f'\\g<1>{new_baseline_url}\\g<3>{new_display_text}\\g<5>',
+            content
+        )
+
+        # Verify the change was made
+        verify_match = re.search(pattern, updated_content)
+        if verify_match and verify_match.group(2) == new_baseline_url and verify_match.group(4) == new_display_text:
+            print(f"✅ Verification: Predecessor baseline successfully updated")
+            return updated_content, old_url
+        else:
+            print("❌ Verification failed: Predecessor baseline was not updated correctly")
+            return content, old_url
+
+    else:
+        print("❌ Could not find predecessor baseline pattern")
+        print("🔍 Searching for alternative patterns...")
+
+        # Look for simpler patterns
+        alternative_patterns = [
+            r'<strong>Predecessor Baseline</strong>',
+            r'Predecessor Baseline',
+            r'<a href="[^"]*display[^"]*">[^<]+</a>',
+        ]
+
+        for i, alt_pattern in enumerate(alternative_patterns):
+            matches = re.findall(alt_pattern, content, re.IGNORECASE)
+            if matches:
+                print(f"Found alternative pattern {i+1}: {matches[:3]}")  # Show first 3 matches
+
+        return content, None
+
 def main():
-    if len(sys.argv) < 3 or len(sys.argv) > 5:
+    if len(sys.argv) < 3:
         print("Usage:")
-        print("  Update date only:")
-        print("    python3 update_gwm_precise.py <confluence_url> <new_date>")
-        print("    Example: python3 update_gwm_precise.py 'https://inside-docupedia.bosch.com/confluence/display/EBR/GWM+FVE0120+BL02+V6.4' '2025-09-25'")
+        print("  python3 update_gwm_precise.py <confluence_url> [date] [--jira key] [--baseline url]")
         print()
-        print("  Update Jira key only:")
-        print("    python3 update_gwm_precise.py <confluence_url> --jira <new_jira_key>")
-        print("    Example: python3 update_gwm_precise.py 'https://inside-docupedia.bosch.com/confluence/display/EBR/GWM+FVE0120+BL02+V6.4' --jira MPCTEGWMA-3000")
-        print()
-        print("  Update both date and Jira key:")
-        print("    python3 update_gwm_precise.py <confluence_url> <new_date> --jira <new_jira_key>")
-        print("    Example: python3 update_gwm_precise.py 'https://inside-docupedia.bosch.com/confluence/display/EBR/GWM+FVE0120+BL02+V6.4' '2025-09-25' --jira MPCTEGWMA-3000")
+        print("Examples:")
+        print("  Date only:")
+        print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' '2025-09-25'")
+        print("  Jira only:")
+        print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' --jira MPCTEGWMA-3000")
+        print("  Baseline only:")
+        print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' --baseline 'https://...display/EBR/NewPage'")
+        print("  Multiple updates:")
+        print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' '2025-09-25' --jira MPCTEGWMA-3000")
+        print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' '2025-09-25' --baseline 'https://...display/EBR/NewPage'")
+        print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' '2025-09-25' --jira MPCTEGWMA-3000 --baseline 'https://...display/EBR/NewPage'")
         print()
         print("  Legacy: You can still use page ID instead of URL if preferred")
         sys.exit(1)
 
     page_input = sys.argv[1]  # Can be URL or page ID
 
-    # Parse arguments
+    # Parse arguments flexibly
+    args = sys.argv[2:]  # Everything after the page input
     update_date = False
     update_jira = False
+    update_baseline = False
     new_date = None
     new_jira_key = None
+    new_baseline_url = None
 
-    if len(sys.argv) == 3:
-        # Either date or --jira flag
-        if sys.argv[2] == '--jira':
-            print("❌ Missing Jira key after --jira flag")
-            sys.exit(1)
-        else:
-            # Date update
-            new_date = sys.argv[2]
-            update_date = True
-    elif len(sys.argv) == 4:
-        if sys.argv[2] == '--jira':
-            # Jira key update only
-            new_jira_key = sys.argv[3]
+    i = 0
+    while i < len(args):
+        arg = args[i]
+
+        if arg == '--jira':
+            if i + 1 >= len(args):
+                print("❌ Missing Jira key after --jira flag")
+                sys.exit(1)
+            new_jira_key = args[i + 1]
             update_jira = True
+            i += 2
+        elif arg == '--baseline':
+            if i + 1 >= len(args):
+                print("❌ Missing baseline URL after --baseline flag")
+                sys.exit(1)
+            new_baseline_url = args[i + 1]
+            update_baseline = True
+            i += 2
+        elif not arg.startswith('--'):
+            # Assume it's a date
+            if new_date is not None:
+                print(f"❌ Multiple non-flag arguments found: '{new_date}' and '{arg}'. Only one date is allowed.")
+                sys.exit(1)
+            new_date = arg
+            update_date = True
+            i += 1
         else:
-            print("❌ Invalid arguments. Use --jira flag for Jira key updates.")
+            print(f"❌ Unknown flag: {arg}")
             sys.exit(1)
-    elif len(sys.argv) == 5:
-        # Both date and jira
-        new_date = sys.argv[2]
-        if sys.argv[3] != '--jira':
-            print("❌ Expected --jira flag as third argument")
-            sys.exit(1)
-        new_jira_key = sys.argv[4]
-        update_date = True
-        update_jira = True
+
+    # Ensure at least one update type is specified
+    if not (update_date or update_jira or update_baseline):
+        print("❌ No updates specified. Provide at least one of: date, --jira, --baseline")
+        sys.exit(1)
 
     # Validate date format if updating date
     if update_date:
@@ -336,17 +450,26 @@ def main():
             print("Please use format PROJECT-NUMBER (e.g., MPCTEGWMA-2216)")
             sys.exit(1)
 
+    # Validate baseline URL format if updating baseline
+    if update_baseline:
+        if not (new_baseline_url.startswith('http') and 'display' in new_baseline_url):
+            print(f"❌ Invalid baseline URL format: {new_baseline_url}")
+            print("Please use a valid Confluence display URL (e.g., https://inside-docupedia.bosch.com/confluence/display/EBR/Page+Title)")
+            sys.exit(1)
+
     print(f"🚀 Starting precise update")
     print(f"📄 Page input: {page_input}")
     if update_date:
         print(f"📅 New date: {new_date}")
     if update_jira:
         print(f"🎫 New Jira key: {new_jira_key}")
+    if update_baseline:
+        print(f"🔗 New baseline URL: {new_baseline_url}")
     print()
 
     try:
         session = setup_session()
-        print('page input: {page_input}')
+        print(f'page input: {page_input}')
         # Determine if input is URL or page ID
         if (page_input.startswith('http') and 'display' in page_input) or (page_input.startswith('https') and 'display' in page_input):
             print("🔗 Input detected as Confluence URL")
@@ -373,16 +496,25 @@ def main():
         updated_content = current_content
         changes_made = False
         old_jira_key = None
+        old_baseline_url = None
+        new_display_text = None
 
         # Update the release date if requested
         if update_date:
             print("🔄 Updating release date...")
-            updated_content = update_release_date_precise(updated_content, new_date)
-            if updated_content != current_content:
+            date_updated_content = update_release_date_precise(updated_content, new_date)
+            if date_updated_content != updated_content:
+                updated_content = date_updated_content
                 changes_made = True
                 print("✅ Date update successful")
             else:
-                print("⚠️  Date update failed")
+                # Check if the date was already correct
+                current_date_match = re.search(r'<time datetime="([^"]*)"', updated_content)
+                if current_date_match and current_date_match.group(1) == new_date:
+                    print(f"ℹ️  Date is already set to {new_date} - no change needed")
+                    changes_made = True  # This counts as a successful "update"
+                else:
+                    print("⚠️  Date update failed")
 
         # Update the Jira key if requested
         if update_jira:
@@ -393,6 +525,18 @@ def main():
                 print("✅ Jira key update successful")
             else:
                 print("⚠️  Jira key update failed")
+
+        # Update the predecessor baseline if requested
+        if update_baseline:
+            print("🔄 Updating predecessor baseline...")
+            updated_content, old_baseline_url = update_predecessor_baseline_precise(updated_content, new_baseline_url)
+            if old_baseline_url:
+                changes_made = True
+                print("✅ Predecessor baseline update successful")
+                # Extract display text for the success message
+                new_display_text = extract_page_title_from_url(new_baseline_url)
+            else:
+                print("⚠️  Predecessor baseline update failed")
 
         if not changes_made:
             print("⚠️  No changes made - could not find or update the requested fields")
@@ -408,6 +552,9 @@ def main():
             print(f"📅 Release date changed to: {new_date}")
         if update_jira:
             print(f"🎫 Jira key changed from: {old_jira_key} → {new_jira_key}")
+        if update_baseline:
+            print(f"🔗 Predecessor baseline changed from: {old_baseline_url} → {new_baseline_url}")
+            print(f"📝 Display text: {new_display_text}")
 
     except Exception as e:
         print(f"💥 Error: {e}")
