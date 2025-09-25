@@ -4,10 +4,8 @@ Inspect Confluence page content to understand structure before updating
 """
 
 import requests
-import json
 import re
 import sys
-from datetime import datetime
 
 # Configuration
 PROXY_SERVER = "http://rb-proxy-apac.bosch.com:8080"
