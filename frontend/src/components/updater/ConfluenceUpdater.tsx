@@ -38,7 +38,7 @@ const ConfluenceUpdater: React.FC = () => {
 
         <Paragraph>
           Update Confluence pages with multiple types of content using the proven Python script backend.
-          This tool can update release dates, Jira ticket references, predecessor baseline URLs, repository baseline URLs, and commit information
+          This tool can update release dates, Jira ticket references, predecessor baseline URLs, repository baseline URLs, commit information, tags, and branches
           with precise pattern matching through the Bosch proxy.
         </Paragraph>
 

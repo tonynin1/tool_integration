@@ -31,7 +31,9 @@ PATTERNS = {
     'jira_ticket': r'(<ac:parameter ac:name="key">)([A-Z]+-[0-9]+)(</ac:parameter>)',
     'predecessor_baseline': r'(<td[^>]*><p[^>]*><strong>Predecessor Baseline</strong></p></td><td[^>]*><a href=")([^"]+)(">)([^<]+)(</a>)',
     'repository_baseline': r'(<span[^>]*>Repository:[^<]*<a[^>]*href=")([^"]+)("[^>]*>)([^<]+)(</a>[^<]*</span>)',
-    'commit_link': r'(<span[^>]*>Commit:\s*<a href=")([^"]+)(">)([^<\s]+)(\s*</a>\s*<br />\s*</span>)'
+    'commit_link': r'(<span[^>]*>Commit:\s*<a href=")([^"]+)(">)([^<\s]+)(\s*</a>\s*<br />\s*</span>)',
+    'tag_link': r'(<span[^>]*>Tag:\s*<a href=")([^"]+)(">)([^<]+)(</a>\s*</span>)',
+    'branch_link': r'(<span[^>]*>Branch:\s*<a href=")([^"]+)(">)([^<]+)(</a>\s*</span>)'
 }
 
 @dataclass
@@ -43,6 +45,10 @@ class UpdateConfig:
     repository_baseline_url: Optional[str] = None
     commit_id: Optional[str] = None
     commit_url: Optional[str] = None
+    tag_name: Optional[str] = None
+    tag_url: Optional[str] = None
+    branch_name: Optional[str] = None
+    branch_url: Optional[str] = None
 
 @dataclass
 class UpdateResult:
@@ -372,6 +378,80 @@ class ContentUpdater:
         return UpdateResult(False, old_commit_id, error="Verification failed")
 
     @staticmethod
+    def update_tag_info(content: str, tag_name: str, tag_url: str) -> UpdateResult:
+        """Update tag name and URL"""
+        print("🔄 Updating tag information...")
+
+        pattern = PATTERNS['tag_link']
+        match = re.search(pattern, content)
+
+        if not match:
+            return UpdateResult(False, error="Tag link pattern not found")
+
+        old_url = match.group(2)
+        old_tag = match.group(4)
+
+        print(f"✅ Found tag information:")
+        print(f"   - Current URL: {old_url}")
+        print(f"   - Current Tag: {old_tag}")
+        print(f"🔄 Updating to:")
+        print(f"   - New URL: {tag_url}")
+        print(f"   - New Tag: {tag_name}")
+
+        # Perform replacement
+        updated_content = re.sub(
+            pattern,
+            f'\\g<1>{tag_url}\\g<3>{tag_name}\\g<5>',
+            content
+        )
+
+        # Verify
+        verify_match = re.search(pattern, updated_content)
+        if (verify_match and
+            verify_match.group(2) == tag_url and
+            verify_match.group(4) == tag_name):
+            return UpdateResult(True, old_tag, tag_name)
+
+        return UpdateResult(False, old_tag, error="Verification failed")
+
+    @staticmethod
+    def update_branch_info(content: str, branch_name: str, branch_url: str) -> UpdateResult:
+        """Update branch name and URL"""
+        print("🔄 Updating branch information...")
+
+        pattern = PATTERNS['branch_link']
+        match = re.search(pattern, content)
+
+        if not match:
+            return UpdateResult(False, error="Branch link pattern not found")
+
+        old_url = match.group(2)
+        old_branch = match.group(4)
+
+        print(f"✅ Found branch information:")
+        print(f"   - Current URL: {old_url}")
+        print(f"   - Current Branch: {old_branch}")
+        print(f"🔄 Updating to:")
+        print(f"   - New URL: {branch_url}")
+        print(f"   - New Branch: {branch_name}")
+
+        # Perform replacement
+        updated_content = re.sub(
+            pattern,
+            f'\\g<1>{branch_url}\\g<3>{branch_name}\\g<5>',
+            content
+        )
+
+        # Verify
+        verify_match = re.search(pattern, updated_content)
+        if (verify_match and
+            verify_match.group(2) == branch_url and
+            verify_match.group(4) == branch_name):
+            return UpdateResult(True, old_branch, branch_name)
+
+        return UpdateResult(False, old_branch, error="Verification failed")
+
+    @staticmethod
     def _extract_page_title_from_url(url: str) -> str:
         """Extract page title from Confluence URL for display"""
         try:
@@ -430,6 +510,18 @@ class ArgumentParser:
                 config.commit_id = args[i + 1]
                 config.commit_url = args[i + 2]
                 i += 3
+            elif arg == '--tag':
+                if i + 2 >= len(args):
+                    raise ValueError("Missing tag name and URL after --tag flag. Usage: --tag <tag_name> <tag_url>")
+                config.tag_name = args[i + 1]
+                config.tag_url = args[i + 2]
+                i += 3
+            elif arg == '--branch':
+                if i + 2 >= len(args):
+                    raise ValueError("Missing branch name and URL after --branch flag. Usage: --branch <branch_name> <branch_url>")
+                config.branch_name = args[i + 1]
+                config.branch_url = args[i + 2]
+                i += 3
             elif not arg.startswith('--'):
                 # Assume it's a date
                 if config.date is not None:
@@ -442,7 +534,7 @@ class ArgumentParser:
         # Validate that at least one update is specified
         if not any([config.date, config.jira_key,
                    config.predecessor_baseline_url, config.repository_baseline_url,
-                   config.commit_id]):
+                   config.commit_id, config.tag_name, config.branch_name]):
             raise ValueError("No updates specified")
 
         return page_input, config
@@ -490,11 +582,33 @@ class ArgumentParser:
             if not re.match(r'^[a-f0-9]{40}$', config.commit_id):
                 raise ValueError(f"Invalid commit ID format: {config.commit_id}. Should be 40-character hexadecimal string")
 
+        # Validate tag parameters - both name and URL must be provided together
+        if config.tag_name and not config.tag_url:
+            raise ValueError("Tag URL is required when tag name is provided")
+        if config.tag_url and not config.tag_name:
+            raise ValueError("Tag name is required when tag URL is provided")
+
+        # Validate tag URL format
+        if config.tag_url:
+            if not (config.tag_url.startswith('http') and 'sourcecode' in config.tag_url):
+                raise ValueError(f"Invalid tag URL format: {config.tag_url}")
+
+        # Validate branch parameters - both name and URL must be provided together
+        if config.branch_name and not config.branch_url:
+            raise ValueError("Branch URL is required when branch name is provided")
+        if config.branch_url and not config.branch_name:
+            raise ValueError("Branch name is required when branch URL is provided")
+
+        # Validate branch URL format
+        if config.branch_url:
+            if not (config.branch_url.startswith('http') and 'sourcecode' in config.branch_url):
+                raise ValueError(f"Invalid branch URL format: {config.branch_url}")
+
     @staticmethod
     def _show_usage():
         """Display usage information"""
         print("Usage:")
-        print("  python3 update_gwm_precise.py <confluence_url> [date] [--jira key] [--baseline url] [--repo-baseline url] [--commit id url]")
+        print("  python3 update_gwm_precise.py <confluence_url> [date] [--jira key] [--baseline url] [--repo-baseline url] [--commit id url] [--tag name url] [--branch name url]")
         print()
         print("Examples:")
         print("  Date only:")
@@ -503,8 +617,10 @@ class ArgumentParser:
         print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' --repo-baseline 'https://sourcecode06.../V9'")
         print("  Commit only:")
         print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' --commit abc123def456... 'https://sourcecode06.../commits/abc123def456...'")
+        print("  Tag and Branch:")
+        print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' --tag GWM_FVE0120_BL02_V8.1 'https://sourcecode06.../commits?until=GWM_FVE0120_BL02_V8.1' --branch 'release/CNGWM_FVE0120_BL02_V8.1' 'https://sourcecode06.../commits?until=refs%2Fheads%2Frelease%2FCNGWM_FVE0120_BL02_V8.1'")
         print("  Multiple updates:")
-        print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' '2025-09-25' --jira MPCTEGWMA-3000 --commit abc123def456... 'https://sourcecode06.../commits/abc123def456...'")
+        print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' '2025-09-25' --jira MPCTEGWMA-3000 --commit abc123def456... 'https://sourcecode06.../commits/abc123def456...' --tag GWM_FVE0120_BL02_V8.1 'https://sourcecode06.../commits?until=GWM_FVE0120_BL02_V8.1'")
 
 # ============================================================================
 # MAIN APPLICATION
@@ -530,6 +646,12 @@ def main():
         if config.commit_id:
             print(f"💾 New commit ID: {config.commit_id}")
             print(f"🔗 New commit URL: {config.commit_url}")
+        if config.tag_name:
+            print(f"🏷️  New tag name: {config.tag_name}")
+            print(f"🔗 New tag URL: {config.tag_url}")
+        if config.branch_name:
+            print(f"🌿 New branch name: {config.branch_name}")
+            print(f"🔗 New branch URL: {config.branch_url}")
         print()
 
         # Initialize Confluence client
@@ -623,6 +745,32 @@ def main():
             else:
                 print(f"⚠️  Commit information update failed: {result.error}")
 
+        # Update tag information
+        if config.tag_name and config.tag_url:
+            result = updater.update_tag_info(updated_content, config.tag_name, config.tag_url)
+            if result.success:
+                updated_content = re.sub(PATTERNS['tag_link'],
+                                       f'\\g<1>{config.tag_url}\\g<3>{config.tag_name}\\g<5>',
+                                       updated_content)
+                changes_made = True
+                results['tag'] = result
+                print("✅ Tag information update successful")
+            else:
+                print(f"⚠️  Tag information update failed: {result.error}")
+
+        # Update branch information
+        if config.branch_name and config.branch_url:
+            result = updater.update_branch_info(updated_content, config.branch_name, config.branch_url)
+            if result.success:
+                updated_content = re.sub(PATTERNS['branch_link'],
+                                       f'\\g<1>{config.branch_url}\\g<3>{config.branch_name}\\g<5>',
+                                       updated_content)
+                changes_made = True
+                results['branch'] = result
+                print("✅ Branch information update successful")
+            else:
+                print(f"⚠️  Branch information update failed: {result.error}")
+
         if not changes_made:
             print("⚠️  No changes made - could not find or update the requested fields")
             sys.exit(1)
@@ -649,6 +797,12 @@ def main():
         if 'commit' in results:
             r = results['commit']
             print(f"💾 Commit changed from: {r.old_value} → {r.new_value}")
+        if 'tag' in results:
+            r = results['tag']
+            print(f"🏷️  Tag changed from: {r.old_value} → {r.new_value}")
+        if 'branch' in results:
+            r = results['branch']
+            print(f"🌿 Branch changed from: {r.old_value} → {r.new_value}")
 
     except Exception as e:
         print(f"💥 Error: {e}")

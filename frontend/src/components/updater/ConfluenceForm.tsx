@@ -28,10 +28,12 @@ const ConfluenceForm: React.FC<ConfluenceFormProps> = ({ onFinish, loading, onRe
 
   const handleFormSubmit = (values: UpdateFormValues) => {
     // Validate that at least one update field is provided
-    if (!values.newDate && !values.newJiraKey && !values.newBaselineUrl && !values.newRepoBaselineUrl && !values.newCommitUrl) {
-      message.error('Please provide at least one field to update (date, Jira key, predecessor baseline, repository baseline, or commit URL)');
+    if (!values.newDate && !values.newJiraKey && !values.newBaselineUrl && !values.newRepoBaselineUrl &&
+        !values.newCommitUrl && !values.newTagUrl && !values.newBranchUrl) {
+      message.error('Please provide at least one field to update (date, Jira key, predecessor baseline, repository baseline, commit URL, tag URL, or branch URL)');
       return;
     }
+
     onFinish(values);
   };
 
@@ -52,6 +54,8 @@ const ConfluenceForm: React.FC<ConfluenceFormProps> = ({ onFinish, loading, onRe
         newBaselineUrl: '',
         newRepoBaselineUrl: '',
         newCommitUrl: '',
+        newTagUrl: '',
+        newBranchUrl: '',
       }}
     >
       <Form.Item
@@ -177,6 +181,52 @@ const ConfluenceForm: React.FC<ConfluenceFormProps> = ({ onFinish, loading, onRe
         <Input
           prefix={<LinkOutlined />}
           placeholder="https://sourcecode06.dev.bosch.com/projects/G3N/repos/fvg3_lfs/commits/abc123def456..."
+          size="large"
+        />
+      </Form.Item>
+
+      <Form.Item
+        label="New Tag URL (Optional)"
+        name="newTagUrl"
+        help="Tag URL from repository (tag name will be extracted automatically)"
+        rules={[
+          {
+            validator: (_, value) => {
+              if (!value) return Promise.resolve();
+              if (value.trim().startsWith('http') && value.includes('sourcecode') && value.includes('until=')) {
+                return Promise.resolve();
+              }
+              return Promise.reject(new Error('Please enter a valid repository URL containing "sourcecode" and "until="'));
+            }
+          }
+        ]}
+      >
+        <Input
+          prefix={<LinkOutlined />}
+          placeholder="https://sourcecode06.dev.bosch.com/projects/G3N/repos/fvg3_lfs/commits?until=GWM_FVE0120_BL02_V8.1"
+          size="large"
+        />
+      </Form.Item>
+
+      <Form.Item
+        label="New Branch URL (Optional)"
+        name="newBranchUrl"
+        help="Branch URL from repository (branch name will be extracted automatically)"
+        rules={[
+          {
+            validator: (_, value) => {
+              if (!value) return Promise.resolve();
+              if (value.trim().startsWith('http') && value.includes('sourcecode') && value.includes('until=refs%2Fheads%2F')) {
+                return Promise.resolve();
+              }
+              return Promise.reject(new Error('Please enter a valid branch URL containing "sourcecode" and "until=refs%2Fheads%2F"'));
+            }
+          }
+        ]}
+      >
+        <Input
+          prefix={<LinkOutlined />}
+          placeholder="https://sourcecode06.dev.bosch.com/projects/G3N/repos/fvg3_lfs/commits?until=refs%2Fheads%2Frelease%2FCNGWM_FVE0120_BL02_V8.1"
           size="large"
         />
       </Form.Item>

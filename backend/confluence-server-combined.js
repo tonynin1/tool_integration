@@ -14,6 +14,27 @@ function extractCommitIdFromUrl(commitUrl) {
   return commitMatch ? commitMatch[1] : null;
 }
 
+// Helper function to extract tag name from tag URL
+function extractTagNameFromUrl(tagUrl) {
+  // Extract tag name from URLs like: https://sourcecode06.dev.bosch.com/projects/G3N/repos/fvg3_lfs/commits?until=GWM_FVE0120_BL02_V8.1
+  const tagMatch = tagUrl.match(/until=([^&]+)$/);
+  if (tagMatch) {
+    return decodeURIComponent(tagMatch[1]);
+  }
+  return null;
+}
+
+// Helper function to extract branch name from branch URL
+function extractBranchNameFromUrl(branchUrl) {
+  // Extract branch name from URLs like: https://sourcecode06.dev.bosch.com/projects/G3N/repos/fvg3_lfs/commits?until=refs%2Fheads%2Frelease%2FCNGWM_FVE0120_BL02_V8.1
+  const branchMatch = branchUrl.match(/until=refs%2Fheads%2F(.+)$/);
+  if (branchMatch) {
+    const branchPath = decodeURIComponent(branchMatch[1]);
+    return `release/${branchPath.split('/').pop()}`; // Extract just the final part for release/X format
+  }
+  return null;
+}
+
 // Helper function to make HTTPS requests (from simple-server.js)
 function makeRequest(requestUrl, options = {}) {
   return new Promise((resolve, reject) => {
@@ -97,7 +118,7 @@ const server = http.createServer(async (req, res) => {
       req.on('data', chunk => body += chunk);
       req.on('end', async () => {
         try {
-          const { pageUrl, pageId, newDate, newJiraKey, newBaselineUrl, newRepoBaselineUrl, newCommitId, newCommitUrl } = JSON.parse(body);
+          const { pageUrl, pageId, newDate, newJiraKey, newBaselineUrl, newRepoBaselineUrl, newCommitId, newCommitUrl, newTagUrl, newBranchUrl } = JSON.parse(body);
 
           // Support both pageUrl (new) and pageId (legacy)
           const pageInput = pageUrl || pageId;
@@ -109,6 +130,8 @@ const server = http.createServer(async (req, res) => {
           // Build Python script arguments based on what's provided
           const args = ['./update_gwm_precise_refactored.py', pageInput];
           let actualCommitId = newCommitId;
+          let extractedTagName = null;
+          let extractedBranchName = null;
 
           // Determine update type and add appropriate arguments
           if (req.url === '/api/update-date') {
@@ -157,8 +180,28 @@ const server = http.createServer(async (req, res) => {
               throw new Error('Invalid commit URL format. Could not extract commit ID.');
             }
 
+            // Handle tag information - extract name from URL
+            if (newTagUrl) {
+              extractedTagName = extractTagNameFromUrl(newTagUrl);
+              if (!extractedTagName) {
+                throw new Error('Could not extract tag name from tag URL. Please ensure URL contains "until=" parameter.');
+              }
+              args.push('--tag', extractedTagName, newTagUrl);
+              updateTypes.push(`tag: ${extractedTagName}`);
+            }
+
+            // Handle branch information - extract name from URL
+            if (newBranchUrl) {
+              extractedBranchName = extractBranchNameFromUrl(newBranchUrl);
+              if (!extractedBranchName) {
+                throw new Error('Could not extract branch name from branch URL. Please ensure URL contains "until=refs%2Fheads%2F" parameter.');
+              }
+              args.push('--branch', extractedBranchName, newBranchUrl);
+              updateTypes.push(`branch: ${extractedBranchName}`);
+            }
+
             if (updateTypes.length === 0) {
-              throw new Error('At least one update field must be provided (newDate, newJiraKey, newBaselineUrl, newRepoBaselineUrl, or newCommitUrl)');
+              throw new Error('At least one update field must be provided (newDate, newJiraKey, newBaselineUrl, newRepoBaselineUrl, newCommitUrl, tag, or branch)');
             }
 
             console.log(`🔄 Multi-update request: ${pageInput} → ${updateTypes.join(', ')}`);
@@ -190,6 +233,8 @@ const server = http.createServer(async (req, res) => {
               let newBaselineText = null;
               let oldRepoBaselineUrl = null;
               let oldCommitId = null;
+              let oldTagName = null;
+              let oldBranchName = null;
               let pageTitle = null;
               let version = null;
 
@@ -224,6 +269,18 @@ const server = http.createServer(async (req, res) => {
                   if (match) oldCommitId = match[1];
                 }
 
+                // Parse tag changes
+                if (line.includes('Tag changed from:')) {
+                  const match = line.match(/Tag changed from: (.+?) → (.+)/);
+                  if (match) oldTagName = match[1];
+                }
+
+                // Parse branch changes
+                if (line.includes('Branch changed from:')) {
+                  const match = line.match(/Branch changed from: (.+?) → (.+)/);
+                  if (match) oldBranchName = match[1];
+                }
+
                 if (line.includes('Display text:')) {
                   const match = line.match(/Display text: (.+)/);
                   if (match) newBaselineText = match[1];
@@ -251,6 +308,8 @@ const server = http.createServer(async (req, res) => {
                 if (newBaselineUrl) updates.push('predecessor baseline');
                 if (newRepoBaselineUrl) updates.push('repository baseline');
                 if (actualCommitId || newCommitUrl) updates.push('commit information');
+                if (extractedTagName) updates.push('tag information');
+                if (extractedBranchName) updates.push('branch information');
                 message = `Updated: ${updates.join(', ')}`;
               }
 
@@ -270,6 +329,12 @@ const server = http.createServer(async (req, res) => {
                 oldCommitId: oldCommitId,
                 newCommitId: actualCommitId || newCommitId,
                 newCommitUrl: newCommitUrl,
+                oldTagName: oldTagName,
+                newTagName: extractedTagName,
+                newTagUrl: newTagUrl,
+                oldBranchName: oldBranchName,
+                newBranchName: extractedBranchName,
+                newBranchUrl: newBranchUrl,
                 pageTitle: pageTitle,
                 version: version,
                 output: output

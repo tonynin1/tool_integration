@@ -43,6 +43,16 @@ export const useConfluenceUpdate = () => {
         payload.newCommitUrl = values.newCommitUrl.trim();
       }
 
+      // Add tag URL if provided (name will be extracted on backend)
+      if (values.newTagUrl) {
+        payload.newTagUrl = values.newTagUrl.trim();
+      }
+
+      // Add branch URL if provided (name will be extracted on backend)
+      if (values.newBranchUrl) {
+        payload.newBranchUrl = values.newBranchUrl.trim();
+      }
+
       message.loading('Updating Confluence page via Python script...', 0);
 
       // Call the simple Node.js server that runs the Python script
@@ -69,6 +79,12 @@ export const useConfluenceUpdate = () => {
           oldCommitId: response.data.oldCommitId,
           newCommitId: response.data.newCommitId,
           newCommitUrl: response.data.newCommitUrl,
+          oldTagName: response.data.oldTagName,
+          newTagName: response.data.newTagName,
+          newTagUrl: response.data.newTagUrl,
+          oldBranchName: response.data.oldBranchName,
+          newBranchName: response.data.newBranchName,
+          newBranchUrl: response.data.newBranchUrl,
           pageTitle: response.data.pageTitle,
           version: response.data.version,
         });

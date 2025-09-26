@@ -13,6 +13,12 @@ export interface UpdateResult {
   oldCommitId?: string;
   newCommitId?: string;
   newCommitUrl?: string;
+  oldTagName?: string;
+  newTagName?: string;
+  newTagUrl?: string;
+  oldBranchName?: string;
+  newBranchName?: string;
+  newBranchUrl?: string;
   pageTitle?: string;
   version?: number;
 }
@@ -24,6 +30,8 @@ export interface UpdateFormValues {
   newBaselineUrl?: string;
   newRepoBaselineUrl?: string;
   newCommitUrl?: string;
+  newTagUrl?: string;
+  newBranchUrl?: string;
 }
 
 export interface UpdatePayload {
@@ -33,4 +41,6 @@ export interface UpdatePayload {
   newBaselineUrl?: string;
   newRepoBaselineUrl?: string;
   newCommitUrl?: string;
+  newTagUrl?: string;
+  newBranchUrl?: string;
 }
