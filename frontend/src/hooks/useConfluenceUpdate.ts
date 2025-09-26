@@ -38,6 +38,11 @@ export const useConfluenceUpdate = () => {
         payload.newRepoBaselineUrl = values.newRepoBaselineUrl.trim();
       }
 
+      // Add commit URL if provided
+      if (values.newCommitUrl) {
+        payload.newCommitUrl = values.newCommitUrl.trim();
+      }
+
       message.loading('Updating Confluence page via Python script...', 0);
 
       // Call the simple Node.js server that runs the Python script
@@ -61,6 +66,9 @@ export const useConfluenceUpdate = () => {
           newBaselineText: response.data.newBaselineText,
           oldRepoBaselineUrl: response.data.oldRepoBaselineUrl,
           newRepoBaselineUrl: response.data.newRepoBaselineUrl,
+          oldCommitId: response.data.oldCommitId,
+          newCommitId: response.data.newCommitId,
+          newCommitUrl: response.data.newCommitUrl,
           pageTitle: response.data.pageTitle,
           version: response.data.version,
         });

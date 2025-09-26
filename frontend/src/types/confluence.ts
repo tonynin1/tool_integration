@@ -10,6 +10,9 @@ export interface UpdateResult {
   newBaselineText?: string;
   oldRepoBaselineUrl?: string;
   newRepoBaselineUrl?: string;
+  oldCommitId?: string;
+  newCommitId?: string;
+  newCommitUrl?: string;
   pageTitle?: string;
   version?: number;
 }
@@ -20,6 +23,7 @@ export interface UpdateFormValues {
   newJiraKey?: string;
   newBaselineUrl?: string;
   newRepoBaselineUrl?: string;
+  newCommitUrl?: string;
 }
 
 export interface UpdatePayload {
@@ -28,4 +32,5 @@ export interface UpdatePayload {
   newJiraKey?: string;
   newBaselineUrl?: string;
   newRepoBaselineUrl?: string;
+  newCommitUrl?: string;
 }

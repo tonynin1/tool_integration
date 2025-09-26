@@ -7,6 +7,13 @@ const PORT = 3002; // Use 3002 as the main port for the combined server
 const CONFLUENCE_BASE_URL = 'https://inside-docupedia.bosch.com/confluence';
 const CONFLUENCE_PAT = "MzEyNTMxNTkwMjQ4OkuYP1fwScED9vGXzXCSLkdIqx+/";
 
+// Helper function to extract commit ID from commit URL
+function extractCommitIdFromUrl(commitUrl) {
+  // Extract commit ID from URLs like: https://sourcecode06.dev.bosch.com/projects/G3N/repos/fvg3_lfs/commits/abc123def456...
+  const commitMatch = commitUrl.match(/\/commits\/([a-f0-9]{40})/);
+  return commitMatch ? commitMatch[1] : null;
+}
+
 // Helper function to make HTTPS requests (from simple-server.js)
 function makeRequest(requestUrl, options = {}) {
   return new Promise((resolve, reject) => {
@@ -101,6 +108,7 @@ const server = http.createServer(async (req, res) => {
 
           // Build Python script arguments based on what's provided
           const args = ['./update_gwm_precise_refactored.py', pageInput];
+          let actualCommitId = newCommitId;
 
           // Determine update type and add appropriate arguments
           if (req.url === '/api/update-date') {
@@ -134,13 +142,23 @@ const server = http.createServer(async (req, res) => {
               updateTypes.push(`repository baseline: ${newRepoBaselineUrl}`);
             }
 
-            if (newCommitId && newCommitUrl) {
-              args.push('--commit', newCommitId, newCommitUrl);
-              updateTypes.push(`commit: ${newCommitId}`);
+            // Handle commit URL - extract commit ID if needed
+            if (newCommitUrl && !newCommitId) {
+              actualCommitId = extractCommitIdFromUrl(newCommitUrl);
+              if (!actualCommitId) {
+                throw new Error('Could not extract commit ID from commit URL. Please ensure URL contains a valid 40-character commit hash.');
+              }
+            }
+
+            if (actualCommitId && newCommitUrl) {
+              args.push('--commit', actualCommitId, newCommitUrl);
+              updateTypes.push(`commit: ${actualCommitId}`);
+            } else if (newCommitUrl && !actualCommitId) {
+              throw new Error('Invalid commit URL format. Could not extract commit ID.');
             }
 
             if (updateTypes.length === 0) {
-              throw new Error('At least one update field must be provided (newDate, newJiraKey, newBaselineUrl, newRepoBaselineUrl, or newCommitId/newCommitUrl)');
+              throw new Error('At least one update field must be provided (newDate, newJiraKey, newBaselineUrl, newRepoBaselineUrl, or newCommitUrl)');
             }
 
             console.log(`🔄 Multi-update request: ${pageInput} → ${updateTypes.join(', ')}`);
@@ -232,7 +250,7 @@ const server = http.createServer(async (req, res) => {
                 if (newJiraKey) updates.push('Jira key');
                 if (newBaselineUrl) updates.push('predecessor baseline');
                 if (newRepoBaselineUrl) updates.push('repository baseline');
-                if (newCommitId) updates.push('commit information');
+                if (actualCommitId || newCommitUrl) updates.push('commit information');
                 message = `Updated: ${updates.join(', ')}`;
               }
 
@@ -250,7 +268,7 @@ const server = http.createServer(async (req, res) => {
                 oldRepoBaselineUrl: oldRepoBaselineUrl,
                 newRepoBaselineUrl: newRepoBaselineUrl,
                 oldCommitId: oldCommitId,
-                newCommitId: newCommitId,
+                newCommitId: actualCommitId || newCommitId,
                 newCommitUrl: newCommitUrl,
                 pageTitle: pageTitle,
                 version: version,

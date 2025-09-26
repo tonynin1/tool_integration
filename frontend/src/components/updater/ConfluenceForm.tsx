@@ -28,8 +28,8 @@ const ConfluenceForm: React.FC<ConfluenceFormProps> = ({ onFinish, loading, onRe
 
   const handleFormSubmit = (values: UpdateFormValues) => {
     // Validate that at least one update field is provided
-    if (!values.newDate && !values.newJiraKey && !values.newBaselineUrl && !values.newRepoBaselineUrl) {
-      message.error('Please provide at least one field to update (date, Jira key, predecessor baseline, or repository baseline)');
+    if (!values.newDate && !values.newJiraKey && !values.newBaselineUrl && !values.newRepoBaselineUrl && !values.newCommitUrl) {
+      message.error('Please provide at least one field to update (date, Jira key, predecessor baseline, repository baseline, or commit URL)');
       return;
     }
     onFinish(values);
@@ -51,6 +51,7 @@ const ConfluenceForm: React.FC<ConfluenceFormProps> = ({ onFinish, loading, onRe
         newJiraKey: '',
         newBaselineUrl: '',
         newRepoBaselineUrl: '',
+        newCommitUrl: '',
       }}
     >
       <Form.Item
@@ -153,6 +154,29 @@ const ConfluenceForm: React.FC<ConfluenceFormProps> = ({ onFinish, loading, onRe
         <Input
           prefix={<LinkOutlined />}
           placeholder="https://sourcecode06.dev.bosch.com/projects/G3N/repos/fvg3_lfs/commits?until=refs%2Fheads%2Frelease%2FCNGWM_FVE0120_BL02_V9"
+          size="large"
+        />
+      </Form.Item>
+
+      <Form.Item
+        label="New Commit URL (Optional)"
+        name="newCommitUrl"
+        help="Direct commit URL from repository (commit ID will be extracted automatically)"
+        rules={[
+          {
+            validator: (_, value) => {
+              if (!value) return Promise.resolve();
+              if (value.trim().startsWith('http') && value.includes('sourcecode') && value.includes('commits')) {
+                return Promise.resolve();
+              }
+              return Promise.reject(new Error('Please enter a valid commit URL containing "sourcecode" and "commits"'));
+            }
+          }
+        ]}
+      >
+        <Input
+          prefix={<LinkOutlined />}
+          placeholder="https://sourcecode06.dev.bosch.com/projects/G3N/repos/fvg3_lfs/commits/abc123def456..."
           size="large"
         />
       </Form.Item>
