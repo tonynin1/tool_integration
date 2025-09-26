@@ -368,6 +368,69 @@ def update_predecessor_baseline_precise(content, new_baseline_url):
 
         return content, None
 
+def update_repository_baseline_precise(content, new_baseline_url):
+    """Update the repository baseline URL in the SW Baseline section"""
+    print(f"🔗 Looking for repository baseline references...")
+
+    print(f"📝 New repository baseline URL: {new_baseline_url}")
+
+    # Pattern to match: <span ...>Repository: <a href="OLD_URL">OLD_URL</a></span>
+    # This appears in the SW Baseline section
+    pattern = r'(<span[^>]*>Repository:[^<]*<a[^>]*href=")([^"]+)("[^>]*>)([^<]+)(</a>[^<]*</span>)'
+
+    match = re.search(pattern, content)
+
+    if match:
+        old_url = match.group(2)
+        old_text = match.group(4)
+
+        print(f"✅ Found repository baseline:")
+        print(f"   - Current URL: {old_url}")
+        print(f"   - Current text: {old_text}")
+        print(f"🔄 Updating to:")
+        print(f"   - New URL: {new_baseline_url}")
+        print(f"   - New text: {new_baseline_url}")
+
+        # Show context around the match
+        start_pos = max(0, match.start() - 100)
+        end_pos = min(len(content), match.end() + 100)
+        context = content[start_pos:end_pos]
+        print(f"📍 Context: ...{context.replace(chr(10), ' ').replace(chr(9), ' ')}...")
+
+        # Perform the replacement - update both URL and display text
+        updated_content = re.sub(
+            pattern,
+            f'\\g<1>{new_baseline_url}\\g<3>{new_baseline_url}\\g<5>',
+            content
+        )
+
+        # Verify the change was made
+        verify_match = re.search(pattern, updated_content)
+        if verify_match and verify_match.group(2) == new_baseline_url and verify_match.group(4) == new_baseline_url:
+            print(f"✅ Verification: Repository baseline successfully updated")
+            return updated_content, old_url
+        else:
+            print("❌ Verification failed: Repository baseline was not updated correctly")
+            return content, old_url
+
+    else:
+        print("❌ Could not find repository baseline pattern")
+        print("🔍 Searching for alternative patterns...")
+
+        # Look for simpler patterns
+        alternative_patterns = [
+            r'Repository:',
+            r'SW Baseline',
+            r'<a href="[^"]*sourcecode[^"]*">[^<]+</a>',
+        ]
+
+        for i, alt_pattern in enumerate(alternative_patterns):
+            matches = re.findall(alt_pattern, content, re.IGNORECASE)
+            if matches:
+                print(f"Found alternative pattern {i+1}: {matches[:3]}")  # Show first 3 matches
+
+        return content, None
+
 def main():
     if len(sys.argv) < 3:
         print("Usage:")
@@ -378,12 +441,15 @@ def main():
         print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' '2025-09-25'")
         print("  Jira only:")
         print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' --jira MPCTEGWMA-3000")
-        print("  Baseline only:")
+        print("  Predecessor Baseline only:")
         print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' --baseline 'https://...display/EBR/NewPage'")
+        print("  Repository Baseline only:")
+        print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' --repo-baseline 'https://sourcecode06.dev.bosch.com/projects/G3N/repos/fvg3_lfs/commits?until=refs%2Fheads%2Frelease%2FCNGWM_FVE0120_BL02_V9'")
         print("  Multiple updates:")
         print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' '2025-09-25' --jira MPCTEGWMA-3000")
         print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' '2025-09-25' --baseline 'https://...display/EBR/NewPage'")
-        print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' '2025-09-25' --jira MPCTEGWMA-3000 --baseline 'https://...display/EBR/NewPage'")
+        print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' '2025-09-25' --repo-baseline 'https://sourcecode06.dev.bosch.com/projects/G3N/repos/fvg3_lfs/commits?until=refs%2Fheads%2Frelease%2FCNGWM_FVE0120_BL02_V9'")
+        print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' '2025-09-25' --jira MPCTEGWMA-3000 --baseline 'https://...display/EBR/NewPage' --repo-baseline 'https://sourcecode06.dev.bosch.com/projects/G3N/repos/fvg3_lfs/commits?until=refs%2Fheads%2Frelease%2FCNGWM_FVE0120_BL02_V9'")
         print()
         print("  Legacy: You can still use page ID instead of URL if preferred")
         sys.exit(1)
@@ -395,9 +461,11 @@ def main():
     update_date = False
     update_jira = False
     update_baseline = False
+    update_repo_baseline = False
     new_date = None
     new_jira_key = None
     new_baseline_url = None
+    new_repo_baseline_url = None
 
     i = 0
     while i < len(args):
@@ -417,6 +485,13 @@ def main():
             new_baseline_url = args[i + 1]
             update_baseline = True
             i += 2
+        elif arg == '--repo-baseline':
+            if i + 1 >= len(args):
+                print("❌ Missing repository baseline URL after --repo-baseline flag")
+                sys.exit(1)
+            new_repo_baseline_url = args[i + 1]
+            update_repo_baseline = True
+            i += 2
         elif not arg.startswith('--'):
             # Assume it's a date
             if new_date is not None:
@@ -430,8 +505,8 @@ def main():
             sys.exit(1)
 
     # Ensure at least one update type is specified
-    if not (update_date or update_jira or update_baseline):
-        print("❌ No updates specified. Provide at least one of: date, --jira, --baseline")
+    if not (update_date or update_jira or update_baseline or update_repo_baseline):
+        print("❌ No updates specified. Provide at least one of: date, --jira, --baseline, --repo-baseline")
         sys.exit(1)
 
     # Validate date format if updating date
@@ -457,6 +532,13 @@ def main():
             print("Please use a valid Confluence display URL (e.g., https://inside-docupedia.bosch.com/confluence/display/EBR/Page+Title)")
             sys.exit(1)
 
+    # Validate repository baseline URL format if updating repo baseline
+    if update_repo_baseline:
+        if not (new_repo_baseline_url.startswith('http') and 'sourcecode' in new_repo_baseline_url):
+            print(f"❌ Invalid repository baseline URL format: {new_repo_baseline_url}")
+            print("Please use a valid repository URL (e.g., https://sourcecode06.dev.bosch.com/projects/G3N/repos/fvg3_lfs/commits?until=refs%2Fheads%2Frelease%2FCNGWM_FVE0120_BL02_V9)")
+            sys.exit(1)
+
     print(f"🚀 Starting precise update")
     print(f"📄 Page input: {page_input}")
     if update_date:
@@ -464,7 +546,9 @@ def main():
     if update_jira:
         print(f"🎫 New Jira key: {new_jira_key}")
     if update_baseline:
-        print(f"🔗 New baseline URL: {new_baseline_url}")
+        print(f"🔗 New predecessor baseline URL: {new_baseline_url}")
+    if update_repo_baseline:
+        print(f"📂 New repository baseline URL: {new_repo_baseline_url}")
     print()
 
     try:
@@ -497,6 +581,7 @@ def main():
         changes_made = False
         old_jira_key = None
         old_baseline_url = None
+        old_repo_baseline_url = None
         new_display_text = None
 
         # Update the release date if requested
@@ -538,6 +623,16 @@ def main():
             else:
                 print("⚠️  Predecessor baseline update failed")
 
+        # Update the repository baseline if requested
+        if update_repo_baseline:
+            print("🔄 Updating repository baseline...")
+            updated_content, old_repo_baseline_url = update_repository_baseline_precise(updated_content, new_repo_baseline_url)
+            if old_repo_baseline_url:
+                changes_made = True
+                print("✅ Repository baseline update successful")
+            else:
+                print("⚠️  Repository baseline update failed")
+
         if not changes_made:
             print("⚠️  No changes made - could not find or update the requested fields")
             sys.exit(1)
@@ -555,6 +650,8 @@ def main():
         if update_baseline:
             print(f"🔗 Predecessor baseline changed from: {old_baseline_url} → {new_baseline_url}")
             print(f"📝 Display text: {new_display_text}")
+        if update_repo_baseline:
+            print(f"📂 Repository baseline changed from: {old_repo_baseline_url} → {new_repo_baseline_url}")
 
     except Exception as e:
         print(f"💥 Error: {e}")

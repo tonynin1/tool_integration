@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import {
   Card,
   Form,
@@ -6,7 +6,6 @@ import {
   Button,
   Space,
   Typography,
-  Alert,
   notification,
   Row,
   Col,
@@ -23,7 +22,7 @@ import {
   ReloadOutlined
 } from "@ant-design/icons";
 
-const { Title, Text, Paragraph } = Typography;
+const { Title, Text } = Typography;
 const { Header, Content } = Layout;
 
 interface ViewerFormValues {

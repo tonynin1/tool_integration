@@ -10,8 +10,6 @@ import {
   Typography,
   Divider,
   Space,
-  Row,
-  Col,
   message,
 } from 'antd';
 import {
