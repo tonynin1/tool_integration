@@ -10,7 +10,6 @@ const confluenceHeaders = {
 export interface ConfluencePageRequest {
   sourceUrl: string;
   parentUrl?: string;
-  targetSpaceKey: string;
   newTitle: string;
 }
 
@@ -223,6 +222,7 @@ class ConfluenceApiService {
 
   async copyPage(request: ConfluencePageRequest): Promise<ConfluencePageResponse> {
     // Use backend API to avoid XSRF issues
+    // Note: Page will be copied to the same space as the source page
     const response = await fetch('http://localhost:3002/api/copy-page', {
       method: 'POST',
       headers: {

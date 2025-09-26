@@ -1,0 +1,14 @@
+{
+  "name": "confluence-backend",
+  "version": "1.0.0",
+  "description": "Backend server for Confluence operations",
+  "main": "confluence-server-combined.js",
+  "scripts": {
+    "start": "node confluence-server-combined.js",
+    "dev": "node confluence-server-combined.js"
+  },
+  "dependencies": {},
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}

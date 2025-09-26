@@ -20,7 +20,7 @@ A React TypeScript application for querying and managing Jira tickets for specif
 
 1. Navigate to the project directory:
 ```bash
-cd /home/vvo8hc/DaiViet/tool_int
+cd /tool_int
 ```
 
 2. Install dependencies:
