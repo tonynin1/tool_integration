@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { ConfigProvider, Tabs } from 'antd';
 import { CopyOutlined, EyeOutlined, BookOutlined } from '@ant-design/icons';
-import ConfluenceCopy from './components/ConfluenceCopy';
-import ConfluenceViewer from './components/ConfluenceViewer';
-import ConfluenceDateUpdater from './components/ConfluenceDateUpdater';
+import ConfluenceCopy from './components/copier/ConfluenceCopy';
+import ConfluenceViewer from './components/viewer/ConfluenceViewer';
+import ConfluenceUpdater from './components/updater/ConfluenceUpdater';
 function App() {
   const [activeTab, setActiveTab] = useState('viewer');
 
@@ -34,7 +34,7 @@ function App() {
           <BookOutlined></BookOutlined> Updater
         </span>
       ),
-      children: <ConfluenceDateUpdater/>
+      children: <ConfluenceUpdater/>
     }
   ];
 

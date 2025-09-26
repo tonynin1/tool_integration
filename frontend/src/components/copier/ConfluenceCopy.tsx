@@ -11,23 +11,21 @@ import {
   Row,
   Col,
   Divider,
-  Tooltip,
-  Layout,
-  theme
+  Tooltip
 } from "antd";
 import {
   CopyOutlined,
-  LinkOutlined,
   FolderOutlined,
   FileTextOutlined,
   InfoCircleOutlined,
   CheckCircleOutlined,
   ExclamationCircleOutlined
 } from "@ant-design/icons";
-import { confluenceApi, ConfluencePageRequest, ConfluenceSpace } from "../services/confluenceApi";
+import { confluenceApi, ConfluencePageRequest, ConfluenceSpace } from "../../services/confluenceApi";
+import { ConfluenceLayout, UrlInput, InstructionsCard, InstructionStep } from '../shared';
+import { useConfluenceValidation } from '../../hooks';
 
 const { Title, Text, Paragraph } = Typography;
-const { Header, Content } = Layout;
 
 interface FormValues {
   sourceUrl: string;
@@ -53,9 +51,7 @@ export default function ConfluenceCopy() {
   const [targetSpaceValid, setTargetSpaceValid] = useState<boolean | null>(null);
   const [targetSpaceExists, setTargetSpaceExists] = useState<boolean | null>(null);
   const [targetSpaceConfirmed, setTargetSpaceConfirmed] = useState(false);
-  const {
-    token: { colorBgContainer, borderRadiusLG },
-  } = theme.useToken();
+  const { extractSpaceAndTitle } = useConfluenceValidation();
 
   useEffect(() => {
     loadSpaces();
@@ -142,18 +138,6 @@ export default function ConfluenceCopy() {
     }
   };
 
-  const validateUrl = (_: any, value: string) => {
-    if (!value) {
-      return Promise.resolve();
-    }
-
-    const confluenceUrlPattern = /^https:\/\/inside-docupedia\.bosch\.com\/confluence\/display\/[A-Z0-9]+\/[^\/]+$/;
-    if (!confluenceUrlPattern.test(value)) {
-      return Promise.reject(new Error('Please enter a valid Confluence page URL'));
-    }
-
-    return Promise.resolve();
-  };
 
   const validateTargetSpace = async (spaceKey: string): Promise<boolean> => {
     if (!spaceKey) return false;
@@ -221,9 +205,7 @@ export default function ConfluenceCopy() {
 
       // Auto-suggest target space from source URL if not already confirmed
       try {
-        const urlPath = url.replace('https://inside-docupedia.bosch.com/confluence', '');
-        const parts = urlPath.split('/');
-        const sourceSpaceKey = parts[3]; // Extract space key from URL
+        const { spaceKey: sourceSpaceKey } = extractSpaceAndTitle(url);
 
         if (sourceSpaceKey && !targetSpaceConfirmed) {
           setTargetSpaceInput(sourceSpaceKey);
@@ -235,24 +217,30 @@ export default function ConfluenceCopy() {
     }
   };
 
-  return (
-    <Layout style={{ minHeight: '100vh' }}>
-      <Header style={{ display: 'flex', alignItems: 'center', padding: '0 24px' }}>
-        <div style={{ color: 'white', fontSize: '18px', fontWeight: 'bold' }}>
-          <CopyOutlined style={{ marginRight: 8 }} />
-          Confluence Page Copy Tool
-        </div>
-      </Header>
+  const instructionSteps: InstructionStep[] = [
+    {
+      title: 'Source Page URL',
+      description: 'Copy the full URL of the Confluence page you want to duplicate'
+    },
+    {
+      title: 'Parent Page (Optional)',
+      description: 'If you want to place the copy under a specific parent page, provide its URL'
+    },
+    {
+      title: 'Target Space',
+      description: 'Enter the space key (e.g., EBR, TECH) where you want to copy the page. The system will check if it\'s writable, then you must confirm it before proceeding.'
+    },
+    {
+      title: 'New Title',
+      description: 'Specify the title for your copied page. It will auto-suggest based on the source.'
+    }
+  ];
 
-      <Content style={{ padding: '24px', minHeight: 280 }}>
-        <div
-          style={{
-            background: colorBgContainer,
-            minHeight: 280,
-            padding: 24,
-            borderRadius: borderRadiusLG,
-          }}
-        >
+  return (
+    <ConfluenceLayout
+      title="Confluence Page Copy Tool"
+      icon={<CopyOutlined style={{ marginRight: 8 }} />}
+    >
           <Row gutter={24}>
             <Col xs={24} lg={16}>
               <Card
@@ -270,45 +258,21 @@ export default function ConfluenceCopy() {
                   onFinish={handleCopy}
                   size="large"
                 >
-                  <Form.Item
-                    label={
-                      <Space>
-                        <LinkOutlined />
-                        <span>Source Page URL</span>
-                        <Tooltip title="The Confluence page you want to copy from">
-                          <InfoCircleOutlined style={{ color: '#666' }} />
-                        </Tooltip>
-                      </Space>
-                    }
+                  <UrlInput
                     name="sourceUrl"
-                    rules={[
-                      { required: true, message: 'Please enter the source page URL' },
-                      { validator: validateUrl }
-                    ]}
-                  >
-                    <Input
-                      placeholder="https://inside-docupedia.bosch.com/confluence/display/EBR/OD+CHERY+T28+EU+BL05+RC6.1"
-                      onChange={handleSourceUrlChange}
-                    />
-                  </Form.Item>
+                    label="Source Page URL"
+                    placeholder="https://inside-docupedia.bosch.com/confluence/display/EBR/OD+CHERY+T28+EU+BL05+RC6.1"
+                    tooltip="The Confluence page you want to copy from"
+                    required
+                    onChange={handleSourceUrlChange}
+                  />
 
-                  <Form.Item
-                    label={
-                      <Space>
-                        <FolderOutlined />
-                        <span>Parent Page URL (Optional)</span>
-                        <Tooltip title="The parent page where the copy will be placed as a child">
-                          <InfoCircleOutlined style={{ color: '#666' }} />
-                        </Tooltip>
-                      </Space>
-                    }
+                  <UrlInput
                     name="parentUrl"
-                    rules={[{ validator: validateUrl }]}
-                  >
-                    <Input
-                      placeholder="https://inside-docupedia.bosch.com/confluence/display/EBR/OD+CHERY+T28+EU+BL05"
-                    />
-                  </Form.Item>
+                    label="Parent Page URL (Optional)"
+                    placeholder="https://inside-docupedia.bosch.com/confluence/display/EBR/OD+CHERY+T28+EU+BL05"
+                    tooltip="The parent page where the copy will be placed as a child"
+                  />
 
                   <Form.Item
                     label={
@@ -445,38 +409,10 @@ export default function ConfluenceCopy() {
             </Col>
 
             <Col xs={24} lg={8}>
-              <Card title="📋 Instructions" size="small" style={{ marginBottom: 16 }}>
-                <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                  <div>
-                    <Title level={5}>1. Source Page URL</Title>
-                    <Text type="secondary">
-                      Copy the full URL of the Confluence page you want to duplicate
-                    </Text>
-                  </div>
-
-                  <div>
-                    <Title level={5}>2. Parent Page (Optional)</Title>
-                    <Text type="secondary">
-                      If you want to place the copy under a specific parent page, provide its URL
-                    </Text>
-                  </div>
-
-                  <div>
-                    <Title level={5}>3. Target Space</Title>
-                    <Text type="secondary">
-                      Enter the space key (e.g., EBR, TECH) where you want to copy the page.
-                      The system will check if it's writable, then you must confirm it before proceeding.
-                    </Text>
-                  </div>
-
-                  <div>
-                    <Title level={5}>4. New Title</Title>
-                    <Text type="secondary">
-                      Specify the title for your copied page. It will auto-suggest based on the source.
-                    </Text>
-                  </div>
-                </Space>
-              </Card>
+              <InstructionsCard
+                title="📋 Instructions"
+                steps={instructionSteps}
+              />
 
               <Card title="🔗 URL Format" size="small">
                 <div>
@@ -513,8 +449,6 @@ export default function ConfluenceCopy() {
               </Card>
             </Col>
           </Row>
-        </div>
-      </Content>
-    </Layout>
+    </ConfluenceLayout>
   );
 }

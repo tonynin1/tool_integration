@@ -90,7 +90,7 @@ const server = http.createServer(async (req, res) => {
       req.on('data', chunk => body += chunk);
       req.on('end', async () => {
         try {
-          const { pageUrl, pageId, newDate, newJiraKey, newBaselineUrl } = JSON.parse(body);
+          const { pageUrl, pageId, newDate, newJiraKey, newBaselineUrl, newRepoBaselineUrl } = JSON.parse(body);
 
           // Support both pageUrl (new) and pageId (legacy)
           const pageInput = pageUrl || pageId;
@@ -100,7 +100,7 @@ const server = http.createServer(async (req, res) => {
           }
 
           // Build Python script arguments based on what's provided
-          const args = ['/home/vvo8hc/DaiViet/tool_int/update_gwm_precise.py', pageInput];
+          const args = ['/home/vvo8hc/DaiViet/tool_int/update_gwm_precise_refactored.py', pageInput];
 
           // Determine update type and add appropriate arguments
           if (req.url === '/api/update-date') {
@@ -126,11 +126,16 @@ const server = http.createServer(async (req, res) => {
 
             if (newBaselineUrl) {
               args.push('--baseline', newBaselineUrl);
-              updateTypes.push(`baseline: ${newBaselineUrl}`);
+              updateTypes.push(`predecessor baseline: ${newBaselineUrl}`);
+            }
+
+            if (newRepoBaselineUrl) {
+              args.push('--repo-baseline', newRepoBaselineUrl);
+              updateTypes.push(`repository baseline: ${newRepoBaselineUrl}`);
             }
 
             if (updateTypes.length === 0) {
-              throw new Error('At least one update field must be provided (newDate, newJiraKey, or newBaselineUrl)');
+              throw new Error('At least one update field must be provided (newDate, newJiraKey, newBaselineUrl, or newRepoBaselineUrl)');
             }
 
             console.log(`🔄 Multi-update request: ${pageInput} → ${updateTypes.join(', ')}`);
@@ -160,6 +165,7 @@ const server = http.createServer(async (req, res) => {
               let oldJiraKey = null;
               let oldBaselineUrl = null;
               let newBaselineText = null;
+              let oldRepoBaselineUrl = null;
               let pageTitle = null;
               let version = null;
 
@@ -180,6 +186,12 @@ const server = http.createServer(async (req, res) => {
                 if (line.includes('Predecessor baseline changed from:')) {
                   const match = line.match(/Predecessor baseline changed from: (.+?) → (.+)/);
                   if (match) oldBaselineUrl = match[1];
+                }
+
+                // Parse repository baseline changes
+                if (line.includes('Repository baseline changed from:')) {
+                  const match = line.match(/Repository baseline changed from: (.+?) → (.+)/);
+                  if (match) oldRepoBaselineUrl = match[1];
                 }
 
                 if (line.includes('Display text:')) {
@@ -207,6 +219,7 @@ const server = http.createServer(async (req, res) => {
                 if (newDate) updates.push('release date');
                 if (newJiraKey) updates.push('Jira key');
                 if (newBaselineUrl) updates.push('predecessor baseline');
+                if (newRepoBaselineUrl) updates.push('repository baseline');
                 message = `Updated: ${updates.join(', ')}`;
               }
 
@@ -221,6 +234,8 @@ const server = http.createServer(async (req, res) => {
                 oldBaselineUrl: oldBaselineUrl,
                 newBaselineUrl: newBaselineUrl,
                 newBaselineText: newBaselineText,
+                oldRepoBaselineUrl: oldRepoBaselineUrl,
+                newRepoBaselineUrl: newRepoBaselineUrl,
                 pageTitle: pageTitle,
                 version: version,
                 output: output
@@ -419,7 +434,7 @@ server.listen(PORT, () => {
   console.log('');
   console.log('📝 Update Endpoints:');
   console.log('   - POST /api/update-date (legacy date-only updates)');
-  console.log('   - POST /api/update-page (multi-field updates: date, Jira, baseline)');
+  console.log('   - POST /api/update-page (multi-field updates: date, Jira, predecessor baseline, repository baseline)');
   console.log('');
   console.log('📋 Confluence API Endpoints:');
   console.log('   - POST /api/copy-page (copy pages between spaces)');
