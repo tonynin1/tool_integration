@@ -90,7 +90,7 @@ const server = http.createServer(async (req, res) => {
       req.on('data', chunk => body += chunk);
       req.on('end', async () => {
         try {
-          const { pageUrl, pageId, newDate, newJiraKey, newBaselineUrl, newRepoBaselineUrl } = JSON.parse(body);
+          const { pageUrl, pageId, newDate, newJiraKey, newBaselineUrl, newRepoBaselineUrl, newCommitId, newCommitUrl } = JSON.parse(body);
 
           // Support both pageUrl (new) and pageId (legacy)
           const pageInput = pageUrl || pageId;
@@ -134,8 +134,13 @@ const server = http.createServer(async (req, res) => {
               updateTypes.push(`repository baseline: ${newRepoBaselineUrl}`);
             }
 
+            if (newCommitId && newCommitUrl) {
+              args.push('--commit', newCommitId, newCommitUrl);
+              updateTypes.push(`commit: ${newCommitId}`);
+            }
+
             if (updateTypes.length === 0) {
-              throw new Error('At least one update field must be provided (newDate, newJiraKey, newBaselineUrl, or newRepoBaselineUrl)');
+              throw new Error('At least one update field must be provided (newDate, newJiraKey, newBaselineUrl, newRepoBaselineUrl, or newCommitId/newCommitUrl)');
             }
 
             console.log(`🔄 Multi-update request: ${pageInput} → ${updateTypes.join(', ')}`);
@@ -166,6 +171,7 @@ const server = http.createServer(async (req, res) => {
               let oldBaselineUrl = null;
               let newBaselineText = null;
               let oldRepoBaselineUrl = null;
+              let oldCommitId = null;
               let pageTitle = null;
               let version = null;
 
@@ -194,6 +200,12 @@ const server = http.createServer(async (req, res) => {
                   if (match) oldRepoBaselineUrl = match[1];
                 }
 
+                // Parse commit changes
+                if (line.includes('Commit changed from:')) {
+                  const match = line.match(/Commit changed from: (.+?) → (.+)/);
+                  if (match) oldCommitId = match[1];
+                }
+
                 if (line.includes('Display text:')) {
                   const match = line.match(/Display text: (.+)/);
                   if (match) newBaselineText = match[1];
@@ -220,6 +232,7 @@ const server = http.createServer(async (req, res) => {
                 if (newJiraKey) updates.push('Jira key');
                 if (newBaselineUrl) updates.push('predecessor baseline');
                 if (newRepoBaselineUrl) updates.push('repository baseline');
+                if (newCommitId) updates.push('commit information');
                 message = `Updated: ${updates.join(', ')}`;
               }
 
@@ -236,6 +249,9 @@ const server = http.createServer(async (req, res) => {
                 newBaselineText: newBaselineText,
                 oldRepoBaselineUrl: oldRepoBaselineUrl,
                 newRepoBaselineUrl: newRepoBaselineUrl,
+                oldCommitId: oldCommitId,
+                newCommitId: newCommitId,
+                newCommitUrl: newCommitUrl,
                 pageTitle: pageTitle,
                 version: version,
                 output: output

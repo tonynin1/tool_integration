@@ -30,7 +30,8 @@ PATTERNS = {
     'release_date': r'(<time datetime=")([0-9]{4}-[0-9]{1,2}-[0-9]{1,2})(" />)',
     'jira_ticket': r'(<ac:parameter ac:name="key">)([A-Z]+-[0-9]+)(</ac:parameter>)',
     'predecessor_baseline': r'(<td[^>]*><p[^>]*><strong>Predecessor Baseline</strong></p></td><td[^>]*><a href=")([^"]+)(">)([^<]+)(</a>)',
-    'repository_baseline': r'(<span[^>]*>Repository:[^<]*<a[^>]*href=")([^"]+)("[^>]*>)([^<]+)(</a>[^<]*</span>)'
+    'repository_baseline': r'(<span[^>]*>Repository:[^<]*<a[^>]*href=")([^"]+)("[^>]*>)([^<]+)(</a>[^<]*</span>)',
+    'commit_link': r'(<span[^>]*>Commit:\s*<a href=")([^"]+)(">)([^<\s]+)(\s*</a>\s*<br />\s*</span>)'
 }
 
 @dataclass
@@ -40,6 +41,8 @@ class UpdateConfig:
     jira_key: Optional[str] = None
     predecessor_baseline_url: Optional[str] = None
     repository_baseline_url: Optional[str] = None
+    commit_id: Optional[str] = None
+    commit_url: Optional[str] = None
 
 @dataclass
 class UpdateResult:
@@ -332,6 +335,43 @@ class ContentUpdater:
         return UpdateResult(False, old_url, error="Verification failed")
 
     @staticmethod
+    def update_commit_info(content: str, commit_id: str, commit_url: str) -> UpdateResult:
+        """Update commit ID and URL"""
+        print("🔄 Updating commit information...")
+
+        pattern = PATTERNS['commit_link']
+        match = re.search(pattern, content)
+
+        if not match:
+            return UpdateResult(False, error="Commit link pattern not found")
+
+        old_url = match.group(2)
+        old_commit_id = match.group(4)
+
+        print(f"✅ Found commit information:")
+        print(f"   - Current URL: {old_url}")
+        print(f"   - Current Commit ID: {old_commit_id}")
+        print(f"🔄 Updating to:")
+        print(f"   - New URL: {commit_url}")
+        print(f"   - New Commit ID: {commit_id}")
+
+        # Perform replacement
+        updated_content = re.sub(
+            pattern,
+            f'\\g<1>{commit_url}\\g<3>{commit_id}\\g<5>',
+            content
+        )
+
+        # Verify
+        verify_match = re.search(pattern, updated_content)
+        if (verify_match and
+            verify_match.group(2) == commit_url and
+            verify_match.group(4) == commit_id):
+            return UpdateResult(True, old_commit_id, commit_id)
+
+        return UpdateResult(False, old_commit_id, error="Verification failed")
+
+    @staticmethod
     def _extract_page_title_from_url(url: str) -> str:
         """Extract page title from Confluence URL for display"""
         try:
@@ -384,6 +424,12 @@ class ArgumentParser:
                     raise ValueError("Missing repository baseline URL after --repo-baseline flag")
                 config.repository_baseline_url = args[i + 1]
                 i += 2
+            elif arg == '--commit':
+                if i + 2 >= len(args):
+                    raise ValueError("Missing commit ID and URL after --commit flag. Usage: --commit <commit_id> <commit_url>")
+                config.commit_id = args[i + 1]
+                config.commit_url = args[i + 2]
+                i += 3
             elif not arg.startswith('--'):
                 # Assume it's a date
                 if config.date is not None:
@@ -395,7 +441,8 @@ class ArgumentParser:
 
         # Validate that at least one update is specified
         if not any([config.date, config.jira_key,
-                   config.predecessor_baseline_url, config.repository_baseline_url]):
+                   config.predecessor_baseline_url, config.repository_baseline_url,
+                   config.commit_id]):
             raise ValueError("No updates specified")
 
         return page_input, config
@@ -427,19 +474,37 @@ class ArgumentParser:
                    'sourcecode' in config.repository_baseline_url):
                 raise ValueError(f"Invalid repository baseline URL: {config.repository_baseline_url}")
 
+        # Validate commit parameters - both ID and URL must be provided together
+        if config.commit_id and not config.commit_url:
+            raise ValueError("Commit URL is required when commit ID is provided")
+        if config.commit_url and not config.commit_id:
+            raise ValueError("Commit ID is required when commit URL is provided")
+
+        # Validate commit URL format
+        if config.commit_url:
+            if not (config.commit_url.startswith('http') and 'sourcecode' in config.commit_url and 'commits' in config.commit_url):
+                raise ValueError(f"Invalid commit URL format: {config.commit_url}")
+
+        # Validate commit ID format (should be a 40-character hex string)
+        if config.commit_id:
+            if not re.match(r'^[a-f0-9]{40}$', config.commit_id):
+                raise ValueError(f"Invalid commit ID format: {config.commit_id}. Should be 40-character hexadecimal string")
+
     @staticmethod
     def _show_usage():
         """Display usage information"""
         print("Usage:")
-        print("  python3 update_gwm_precise.py <confluence_url> [date] [--jira key] [--baseline url] [--repo-baseline url]")
+        print("  python3 update_gwm_precise.py <confluence_url> [date] [--jira key] [--baseline url] [--repo-baseline url] [--commit id url]")
         print()
         print("Examples:")
         print("  Date only:")
         print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' '2025-09-25'")
         print("  Repository Baseline only:")
         print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' --repo-baseline 'https://sourcecode06.../V9'")
+        print("  Commit only:")
+        print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' --commit abc123def456... 'https://sourcecode06.../commits/abc123def456...'")
         print("  Multiple updates:")
-        print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' '2025-09-25' --jira MPCTEGWMA-3000 --repo-baseline 'https://sourcecode06.../V9'")
+        print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' '2025-09-25' --jira MPCTEGWMA-3000 --commit abc123def456... 'https://sourcecode06.../commits/abc123def456...'")
 
 # ============================================================================
 # MAIN APPLICATION
@@ -462,6 +527,9 @@ def main():
             print(f"🔗 New predecessor baseline URL: {config.predecessor_baseline_url}")
         if config.repository_baseline_url:
             print(f"📂 New repository baseline URL: {config.repository_baseline_url}")
+        if config.commit_id:
+            print(f"💾 New commit ID: {config.commit_id}")
+            print(f"🔗 New commit URL: {config.commit_url}")
         print()
 
         # Initialize Confluence client
@@ -542,6 +610,19 @@ def main():
             else:
                 print(f"⚠️  Repository baseline update failed: {result.error}")
 
+        # Update commit information
+        if config.commit_id and config.commit_url:
+            result = updater.update_commit_info(updated_content, config.commit_id, config.commit_url)
+            if result.success:
+                updated_content = re.sub(PATTERNS['commit_link'],
+                                       f'\\g<1>{config.commit_url}\\g<3>{config.commit_id}\\g<5>',
+                                       updated_content)
+                changes_made = True
+                results['commit'] = result
+                print("✅ Commit information update successful")
+            else:
+                print(f"⚠️  Commit information update failed: {result.error}")
+
         if not changes_made:
             print("⚠️  No changes made - could not find or update the requested fields")
             sys.exit(1)
@@ -565,6 +646,9 @@ def main():
         if 'repository_baseline' in results:
             r = results['repository_baseline']
             print(f"📂 Repository baseline changed from: {r.old_value} → {r.new_value}")
+        if 'commit' in results:
+            r = results['commit']
+            print(f"💾 Commit changed from: {r.old_value} → {r.new_value}")
 
     except Exception as e:
         print(f"💥 Error: {e}")
