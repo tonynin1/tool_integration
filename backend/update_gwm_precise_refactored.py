@@ -500,11 +500,6 @@ class ContentUpdater:
         verify_match = re.search(pattern, updated_content)
         if verify_match:
             actual_new_path = verify_match.group(2)
-            print(f"🔍 Debug verification:")
-            print(f"   - Expected: {escaped_new_path}")
-            print(f"   - Actual:   {actual_new_path}")
-            print(f"   - Match: {actual_new_path == escaped_new_path}")
-
             if actual_new_path == escaped_new_path:
                 return UpdateResult(True, old_full_path, new_path)
             else:
@@ -543,20 +538,16 @@ class ContentUpdater:
         else:
             tool_section = content[tool_section_start:next_section_start]
 
-        # Find all tool paths in this section using multiple patterns
-        # Pattern 1: Standard format
+        # Find all tool paths using multiple patterns for different HTML formats
         pattern1 = r'(\\\\<a class="external-link"[^>]*>[^<]+</a>\\[^<\s]+)'
-        # Pattern 2: With span and color formatting (for first MEA link) - captures the path inside spans
         pattern2 = r'<span[^>]*>\\\\</span><a class="external-link"[^>]*>[^<]+</a><span[^>]*>(\\[^<]+)</span>'
 
         matches1 = re.findall(pattern1, tool_section)
         matches2 = re.findall(pattern2, tool_section)
 
-
-        # Combine and format matches2 to look like matches1
+        # Format span-wrapped paths to match standard format
         formatted_matches2 = []
         for match in matches2:
-            # Find the corresponding server link for this path
             server_match = re.search(r'<a class="external-link"[^>]*href="[^"]*">([^<]+)</a>', tool_section)
             if server_match:
                 server_name = server_match.group(1)
@@ -568,14 +559,12 @@ class ContentUpdater:
         if not matches:
             return UpdateResult(False, error="No tool paths found in Tool Release Info section"), content
 
-        print(f"✅ Found {len(matches)} tool path(s) to update:")
+        print(f"✅ Found {len(matches)} tool path(s) to update")
 
         updated_content = content
         total_replacements = 0
 
-        for i, old_path in enumerate(matches):
-            print(f"   {i+1}. {old_path}")
-
+        for old_path in matches:
             # Find where paths diverge to identify version difference
             old_parts = old_path.split('\\')
             new_parts = formatted_new_path.split('\\')
@@ -588,36 +577,19 @@ class ContentUpdater:
                     break
 
             if diverge_index >= 0 and diverge_index < len(old_parts) and diverge_index < len(new_parts):
-                old_version = old_parts[diverge_index]
-                new_version = new_parts[diverge_index]
-
-                # Only replace the version in the path structure, not in filenames
-                # Use more precise replacement to avoid overlapping issues
-
                 # Create the updated path by reconstructing it
                 updated_parts = old_parts.copy()
-                updated_parts[diverge_index] = new_version
+                updated_parts[diverge_index] = new_parts[diverge_index]
                 updated_old_path = '\\'.join(updated_parts)
 
-                print(f"      → Updating: {old_path}")
-                print(f"      → To:       {updated_old_path}")
-
-                # Verify this replacement won't cause issues
+                # Skip if no actual change needed
                 if old_path == updated_old_path:
-                    print(f"      ⚠️  Skipping: No actual change needed")
                     continue
 
-                # Use precise replacement by searching for the exact old path context
-                # This prevents replacing partial matches like "V8" in "V8.1"
+                # Replace the old path with the updated path
                 if old_path in updated_content:
-                    # Replace only the first occurrence
                     updated_content = updated_content.replace(old_path, updated_old_path, 1)
                     total_replacements += 1
-                    print(f"      ✅ Replaced successfully")
-                else:
-                    print(f"      ⚠️  Path not found in content for replacement")
-            else:
-                print(f"      ⚠️  Skipping: Could not determine version pattern for {old_path}")
 
         if total_replacements > 0:
             print(f"✅ Successfully updated {total_replacements} tool path(s)")
