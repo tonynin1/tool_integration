@@ -33,7 +33,8 @@ PATTERNS = {
     'repository_baseline': r'(<span[^>]*>Repository:[^<]*<a[^>]*href=")([^"]+)("[^>]*>)([^<]+)(</a>[^<]*</span>)',
     'commit_link': r'(<span[^>]*>Commit:\s*<a href=")([^"]+)(">)([^<\s]+)(\s*</a>\s*<br />\s*</span>)',
     'tag_link': r'(<span[^>]*>Tag:\s*<a href=")([^"]+)(">)([^<]+)(</a>\s*</span>)',
-    'branch_link': r'(<span[^>]*>Branch:\s*<a href=")([^"]+)(">)([^<]+)(</a>\s*</span>)'
+    'branch_link': r'(<span[^>]*>Branch:\s*<a href=")([^"]+)(">)([^<]+)(</a>\s*</span>)',
+    'binary_path': r'(<span>)(\\\\<a class="external-link" href="[^"]*">[^<]+</a>\\[^<]+)(</span>)'
 }
 
 @dataclass
@@ -49,6 +50,8 @@ class UpdateConfig:
     tag_url: Optional[str] = None
     branch_name: Optional[str] = None
     branch_url: Optional[str] = None
+    binary_path: Optional[str] = None
+    tool_path: Optional[str] = None
 
 @dataclass
 class UpdateResult:
@@ -452,6 +455,177 @@ class ContentUpdater:
         return UpdateResult(False, old_branch, error="Verification failed")
 
     @staticmethod
+    def update_binary_path(content: str, new_path: str) -> UpdateResult:
+        """Update binary file path in the Binaries section"""
+        print("🔄 Updating binary path...")
+
+        pattern = PATTERNS['binary_path']
+        match = re.search(pattern, content)
+
+        if not match:
+            return UpdateResult(False, error="Binary path pattern not found")
+
+        old_full_path = match.group(2)
+
+        print(f"✅ Found binary path:")
+        print(f"   - Current path: {old_full_path}")
+        print(f"🔄 Updating to:")
+        print(f"   - New path: {new_path}")
+
+        # If the new path is a simple path (without HTML), convert it to the expected HTML format
+        if not '<a class="external-link"' in new_path:
+            # Extract server and path components
+            if new_path.startswith('\\\\'):
+                # Format: \\server\path...
+                parts = new_path[2:].split('\\', 1)  # Remove \\ and split at first \
+                server = parts[0] if len(parts) > 0 else ''
+                remaining_path = '\\' + parts[1] if len(parts) > 1 else ''
+
+                # Create HTML format with link
+                formatted_new_path = f'\\\\<a class="external-link" href="http://{server}/">{server}</a>{remaining_path}'
+            else:
+                formatted_new_path = new_path
+        else:
+            formatted_new_path = new_path
+
+        # Perform replacement - escape the new_path to handle backslashes
+        escaped_new_path = formatted_new_path.replace('\\', '\\\\')
+        updated_content = re.sub(
+            pattern,
+            f'\\g<1>{escaped_new_path}\\g<3>',
+            content
+        )
+
+        # Verify
+        verify_match = re.search(pattern, updated_content)
+        if verify_match:
+            actual_new_path = verify_match.group(2)
+            print(f"🔍 Debug verification:")
+            print(f"   - Expected: {escaped_new_path}")
+            print(f"   - Actual:   {actual_new_path}")
+            print(f"   - Match: {actual_new_path == escaped_new_path}")
+
+            if actual_new_path == escaped_new_path:
+                return UpdateResult(True, old_full_path, new_path)
+            else:
+                return UpdateResult(False, old_full_path, error=f"Verification failed - expected '{escaped_new_path}' but got '{actual_new_path}'")
+        else:
+            return UpdateResult(False, old_full_path, error="Verification failed - no match found after update")
+
+    @staticmethod
+    def update_tool_paths_auto(content: str, new_path: str) -> tuple:
+        """Update tool paths in the Tool Release Info section by auto-detecting old paths (path only, not filenames)"""
+        print("🔄 Updating tool paths in Tool Release Info section...")
+
+        # Format the new path if it's a simple path
+        if not '<a class="external-link"' in new_path:
+            if new_path.startswith('\\\\'):
+                parts = new_path[2:].split('\\', 1)
+                server = parts[0] if len(parts) > 0 else ''
+                remaining_path = '\\' + parts[1] if len(parts) > 1 else ''
+                formatted_new_path = f'\\\\<a class="external-link" href="http://{server}/">{server}</a>{remaining_path}'
+            else:
+                formatted_new_path = new_path
+        else:
+            formatted_new_path = new_path
+
+        print(f"🔄 Updating to new path: {new_path}")
+
+        # Extract the Tool Release Info section
+        tool_section_start = content.find('<h1><strong>Tool Release Info</strong></h1>')
+        if tool_section_start == -1:
+            return UpdateResult(False, error="Tool Release Info section not found"), content
+
+        # Find the end of the Tool Release Info section (next h1 tag)
+        next_section_start = content.find('<h1>', tool_section_start + 1)
+        if next_section_start == -1:
+            tool_section = content[tool_section_start:]
+        else:
+            tool_section = content[tool_section_start:next_section_start]
+
+        # Find all tool paths in this section using multiple patterns
+        # Pattern 1: Standard format
+        pattern1 = r'(\\\\<a class="external-link"[^>]*>[^<]+</a>\\[^<\s]+)'
+        # Pattern 2: With span and color formatting (for first MEA link) - captures the path inside spans
+        pattern2 = r'<span[^>]*>\\\\</span><a class="external-link"[^>]*>[^<]+</a><span[^>]*>(\\[^<]+)</span>'
+
+        matches1 = re.findall(pattern1, tool_section)
+        matches2 = re.findall(pattern2, tool_section)
+
+
+        # Combine and format matches2 to look like matches1
+        formatted_matches2 = []
+        for match in matches2:
+            # Find the corresponding server link for this path
+            server_match = re.search(r'<a class="external-link"[^>]*href="[^"]*">([^<]+)</a>', tool_section)
+            if server_match:
+                server_name = server_match.group(1)
+                formatted_path = f'\\\\<a class="external-link" href="http://{server_name}/">{server_name}</a>{match}'
+                formatted_matches2.append(formatted_path)
+
+        matches = matches1 + formatted_matches2
+
+        if not matches:
+            return UpdateResult(False, error="No tool paths found in Tool Release Info section"), content
+
+        print(f"✅ Found {len(matches)} tool path(s) to update:")
+
+        updated_content = content
+        total_replacements = 0
+
+        for i, old_path in enumerate(matches):
+            print(f"   {i+1}. {old_path}")
+
+            # Find where paths diverge to identify version difference
+            old_parts = old_path.split('\\')
+            new_parts = formatted_new_path.split('\\')
+
+            # Find the differing version part
+            diverge_index = -1
+            for idx, (old_part, new_part) in enumerate(zip(old_parts, new_parts)):
+                if old_part != new_part:
+                    diverge_index = idx
+                    break
+
+            if diverge_index >= 0 and diverge_index < len(old_parts) and diverge_index < len(new_parts):
+                old_version = old_parts[diverge_index]
+                new_version = new_parts[diverge_index]
+
+                # Only replace the version in the path structure, not in filenames
+                # Use more precise replacement to avoid overlapping issues
+
+                # Create the updated path by reconstructing it
+                updated_parts = old_parts.copy()
+                updated_parts[diverge_index] = new_version
+                updated_old_path = '\\'.join(updated_parts)
+
+                print(f"      → Updating: {old_path}")
+                print(f"      → To:       {updated_old_path}")
+
+                # Verify this replacement won't cause issues
+                if old_path == updated_old_path:
+                    print(f"      ⚠️  Skipping: No actual change needed")
+                    continue
+
+                # Use precise replacement by searching for the exact old path context
+                # This prevents replacing partial matches like "V8" in "V8.1"
+                if old_path in updated_content:
+                    # Replace only the first occurrence
+                    updated_content = updated_content.replace(old_path, updated_old_path, 1)
+                    total_replacements += 1
+                    print(f"      ✅ Replaced successfully")
+                else:
+                    print(f"      ⚠️  Path not found in content for replacement")
+            else:
+                print(f"      ⚠️  Skipping: Could not determine version pattern for {old_path}")
+
+        if total_replacements > 0:
+            print(f"✅ Successfully updated {total_replacements} tool path(s)")
+            return UpdateResult(True, f"{total_replacements} paths", new_path), updated_content
+        else:
+            return UpdateResult(False, error="No tool paths were updated"), content
+
+    @staticmethod
     def _extract_page_title_from_url(url: str) -> str:
         """Extract page title from Confluence URL for display"""
         try:
@@ -522,6 +696,16 @@ class ArgumentParser:
                 config.branch_name = args[i + 1]
                 config.branch_url = args[i + 2]
                 i += 3
+            elif arg == '--binary-path':
+                if i + 1 >= len(args):
+                    raise ValueError("Missing binary path after --binary-path flag")
+                config.binary_path = args[i + 1]
+                i += 2
+            elif arg == '--tool-path':
+                if i + 1 >= len(args):
+                    raise ValueError("Missing new tool path after --tool-path flag")
+                config.tool_path = args[i + 1]
+                i += 2
             elif not arg.startswith('--'):
                 # Assume it's a date
                 if config.date is not None:
@@ -534,7 +718,8 @@ class ArgumentParser:
         # Validate that at least one update is specified
         if not any([config.date, config.jira_key,
                    config.predecessor_baseline_url, config.repository_baseline_url,
-                   config.commit_id, config.tag_name, config.branch_name]):
+                   config.commit_id, config.tag_name, config.branch_name, config.binary_path,
+                   config.tool_path]):
             raise ValueError("No updates specified")
 
         return page_input, config
@@ -608,7 +793,7 @@ class ArgumentParser:
     def _show_usage():
         """Display usage information"""
         print("Usage:")
-        print("  python3 update_gwm_precise.py <confluence_url> [date] [--jira key] [--baseline url] [--repo-baseline url] [--commit id url] [--tag name url] [--branch name url]")
+        print("  python3 update_gwm_precise.py <confluence_url> [date] [--jira key] [--baseline url] [--repo-baseline url] [--commit id url] [--tag name url] [--branch name url] [--binary-path path] [--tool-path new_path]")
         print()
         print("Examples:")
         print("  Date only:")
@@ -619,8 +804,12 @@ class ArgumentParser:
         print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' --commit abc123def456... 'https://sourcecode06.../commits/abc123def456...'")
         print("  Tag and Branch:")
         print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' --tag GWM_FVE0120_BL02_V8.1 'https://sourcecode06.../commits?until=GWM_FVE0120_BL02_V8.1' --branch 'release/CNGWM_FVE0120_BL02_V8.1' 'https://sourcecode06.../commits?until=refs%2Fheads%2Frelease%2FCNGWM_FVE0120_BL02_V8.1'")
+        print("  Binary Path only:")
+        print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' --binary-path 'A07G_FVE0120\\BL02\\V8\\Int_test'")
+        print("  Tool Path only:")
+        print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' --tool-path '\\\\abtvdfs2.de.bosch.com\\ismdfs\\loc\\szh\\DA\\Driving\\SW_TOOL_Release\\MPC3_EVO\\GWM\\FVE0120\\A07G\\BL02\\V8.1'")
         print("  Multiple updates:")
-        print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' '2025-09-25' --jira MPCTEGWMA-3000 --commit abc123def456... 'https://sourcecode06.../commits/abc123def456...' --tag GWM_FVE0120_BL02_V8.1 'https://sourcecode06.../commits?until=GWM_FVE0120_BL02_V8.1'")
+        print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' '2025-09-25' --jira MPCTEGWMA-3000 --commit abc123def456... 'https://sourcecode06.../commits/abc123def456...' --tag GWM_FVE0120_BL02_V8.1 'https://sourcecode06.../commits?until=GWM_FVE0120_BL02_V8.1' --binary-path 'A07G_FVE0120\\BL02\\V8\\Int_test' --tool-path '\\\\abtvdfs2.de.bosch.com\\ismdfs\\loc\\szh\\DA\\Driving\\SW_TOOL_Release\\MPC3_EVO\\GWM\\FVE0120\\A07G\\BL02\\V8.1'")
 
 # ============================================================================
 # MAIN APPLICATION
@@ -652,6 +841,10 @@ def main():
         if config.branch_name:
             print(f"🌿 New branch name: {config.branch_name}")
             print(f"🔗 New branch URL: {config.branch_url}")
+        if config.binary_path:
+            print(f"📁 New binary path: {config.binary_path}")
+        if config.tool_path:
+            print(f"🔧 New tool path: {config.tool_path}")
         print()
 
         # Initialize Confluence client
@@ -771,6 +964,44 @@ def main():
             else:
                 print(f"⚠️  Branch information update failed: {result.error}")
 
+        # Update binary path
+        if config.binary_path:
+            result = updater.update_binary_path(updated_content, config.binary_path)
+            if result.success:
+                # Format the binary path properly with HTML if needed
+                new_path = config.binary_path
+                if not '<a class="external-link"' in new_path:
+                    if new_path.startswith('\\\\'):
+                        parts = new_path[2:].split('\\', 1)
+                        server = parts[0] if len(parts) > 0 else ''
+                        remaining_path = '\\' + parts[1] if len(parts) > 1 else ''
+                        formatted_binary_path = f'\\\\<a class="external-link" href="http://{server}/">{server}</a>{remaining_path}'
+                    else:
+                        formatted_binary_path = new_path
+                else:
+                    formatted_binary_path = new_path
+
+                escaped_binary_path = formatted_binary_path.replace('\\', '\\\\')
+                updated_content = re.sub(PATTERNS['binary_path'],
+                                       f'\\g<1>{escaped_binary_path}\\g<3>',
+                                       updated_content)
+                changes_made = True
+                results['binary_path'] = result
+                print("✅ Binary path update successful")
+            else:
+                print(f"⚠️  Binary path update failed: {result.error}")
+
+        # Update tool paths
+        if config.tool_path:
+            result, new_content = updater.update_tool_paths_auto(updated_content, config.tool_path)
+            if result.success:
+                updated_content = new_content
+                changes_made = True
+                results['tool_path'] = result
+                print("✅ Tool path update successful")
+            else:
+                print(f"⚠️  Tool path update failed: {result.error}")
+
         if not changes_made:
             print("⚠️  No changes made - could not find or update the requested fields")
             sys.exit(1)
@@ -803,6 +1034,12 @@ def main():
         if 'branch' in results:
             r = results['branch']
             print(f"🌿 Branch changed from: {r.old_value} → {r.new_value}")
+        if 'binary_path' in results:
+            r = results['binary_path']
+            print(f"📁 Binary path changed from: {r.old_value} → {r.new_value}")
+        if 'tool_path' in results:
+            r = results['tool_path']
+            print(f"🔧 Tool path changed from: {r.old_value} → {r.new_value}")
 
     except Exception as e:
         print(f"💥 Error: {e}")
