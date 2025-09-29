@@ -10,6 +10,9 @@ import {
 import {
   CalendarOutlined,
   LinkOutlined,
+  ToolOutlined,
+  ExperimentOutlined,
+  FolderOutlined,
 } from '@ant-design/icons';
 import { UpdateFormValues } from '../../types/confluence';
 
@@ -29,8 +32,8 @@ const ConfluenceForm: React.FC<ConfluenceFormProps> = ({ onFinish, loading, onRe
   const handleFormSubmit = (values: UpdateFormValues) => {
     // Validate that at least one update field is provided
     if (!values.newDate && !values.newJiraKey && !values.newBaselineUrl && !values.newRepoBaselineUrl &&
-        !values.newCommitUrl && !values.newTagUrl && !values.newBranchUrl) {
-      message.error('Please provide at least one field to update (date, Jira key, predecessor baseline, repository baseline, commit URL, tag URL, or branch URL)');
+        !values.newCommitUrl && !values.newTagUrl && !values.newBranchUrl && !values.toolLinks && !values.intTestLinks && !values.binaryPath) {
+      message.error('Please provide at least one field to update (date, Jira key, predecessor baseline, repository baseline, commit URL, tag URL, branch URL, tool links, INT test links, or binary path)');
       return;
     }
 
@@ -56,6 +59,9 @@ const ConfluenceForm: React.FC<ConfluenceFormProps> = ({ onFinish, loading, onRe
         newCommitUrl: '',
         newTagUrl: '',
         newBranchUrl: '',
+        toolLinks: '',
+        intTestLinks: '',
+        binaryPath: '',
       }}
     >
       <Form.Item
@@ -227,6 +233,75 @@ const ConfluenceForm: React.FC<ConfluenceFormProps> = ({ onFinish, loading, onRe
         <Input
           prefix={<LinkOutlined />}
           placeholder="https://sourcecode06.dev.bosch.com/projects/G3N/repos/fvg3_lfs/commits?until=refs%2Fheads%2Frelease%2FCNGWM_FVE0120_BL02_V8.1"
+          size="large"
+        />
+      </Form.Item>
+
+      <Form.Item
+        label="Binary Path (Optional)"
+        name="binaryPath"
+        help="Binary path in the Release Info table - will update the binaries section"
+        rules={[
+          {
+            validator: (_, value) => {
+              if (!value) return Promise.resolve();
+              if (value.trim().startsWith('\\\\') && value.includes('abtvdfs2.de.bosch.com')) {
+                return Promise.resolve();
+              }
+              return Promise.reject(new Error('Please enter a valid UNC path starting with \\\\ and containing abtvdfs2.de.bosch.com'));
+            }
+          }
+        ]}
+      >
+        <Input
+          prefix={<FolderOutlined />}
+          placeholder="\\abtvdfs2.de.bosch.com\ismdfs\loc\szh\DA\Driving\SW_TOOL_Release\MPC3_EVO\GWM\A07G_FVE0120\BL02\V8.4"
+          size="large"
+        />
+      </Form.Item>
+
+      <Form.Item
+        label="Tool Links (Optional)"
+        name="toolLinks"
+        help="UNC path for Tool Release Info table (MEA, ADM, Restbus links) - will replace 4 tool links"
+        rules={[
+          {
+            validator: (_, value) => {
+              if (!value) return Promise.resolve();
+              if (value.trim().startsWith('\\\\') && value.includes('abtvdfs2.de.bosch.com')) {
+                return Promise.resolve();
+              }
+              return Promise.reject(new Error('Please enter a valid UNC path starting with \\\\ and containing abtvdfs2.de.bosch.com'));
+            }
+          }
+        ]}
+      >
+        <Input
+          prefix={<ToolOutlined />}
+          placeholder="\\abtvdfs2.de.bosch.com\ismdfs\loc\szh\DA\Driving\SW_TOOL_Release\MPC3_EVO\GWM\FVE0120\A07G\BL02\V8.4"
+          size="large"
+        />
+      </Form.Item>
+
+      <Form.Item
+        label="INT Test Links (Optional)"
+        name="intTestLinks"
+        help="UNC path for INT Test table links (Communication, SW Version, Force calibration, memory report) - will add \Int_test suffix and replace 4 INT test links"
+        rules={[
+          {
+            validator: (_, value) => {
+              if (!value) return Promise.resolve();
+              if (value.trim().startsWith('\\\\') && value.includes('abtvdfs2.de.bosch.com')) {
+                return Promise.resolve();
+              }
+              return Promise.reject(new Error('Please enter a valid UNC path starting with \\\\ and containing abtvdfs2.de.bosch.com'));
+            }
+          }
+        ]}
+      >
+        <Input
+          prefix={<ExperimentOutlined />}
+          placeholder="\\abtvdfs2.de.bosch.com\ismdfs\loc\szh\DA\Driving\SW_TOOL_Release\MPC3_EVO\GWM\FVE0120\A07G\BL02\V8.4"
           size="large"
         />
       </Form.Item>

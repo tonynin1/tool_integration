@@ -500,14 +500,14 @@ class ContentUpdater:
             content
         )
 
-        # Verify
+        # Verify - compare against the original formatted path, not the escaped version
         verify_match = re.search(pattern, updated_content)
         if verify_match:
             actual_new_path = verify_match.group(2)
-            if actual_new_path == escaped_new_path:
+            if actual_new_path == formatted_new_path:
                 return UpdateResult(True, old_full_path, new_path)
             else:
-                return UpdateResult(False, old_full_path, error=f"Verification failed - expected '{escaped_new_path}' but got '{actual_new_path}'")
+                return UpdateResult(False, old_full_path, error=f"Verification failed - expected '{formatted_new_path}' but got '{actual_new_path}'")
         else:
             return UpdateResult(False, old_full_path, error="Verification failed - no match found after update")
 
@@ -683,7 +683,7 @@ class ArgumentParser:
         # Validate that at least one update is specified
         if not any([config.date, config.jira_key,
                    config.predecessor_baseline_url, config.repository_baseline_url,
-                   config.commit_id, config.tag_name, config.branch_name, config.tool_links, config.int_test_links]):
+                   config.commit_id, config.tag_name, config.branch_name, config.binary_path, config.tool_links, config.int_test_links]):
             raise ValueError("No updates specified")
 
         return page_input, config

@@ -19,6 +19,14 @@ export interface UpdateResult {
   oldBranchName?: string;
   newBranchName?: string;
   newBranchUrl?: string;
+  toolLinksUpdated?: boolean;
+  toolLinksValue?: string;
+  intTestLinksUpdated?: boolean;
+  intTestLinksValue?: string;
+  binaryPathUpdated?: boolean;
+  binaryPathValue?: string;
+  oldBinaryPath?: string;
+  newBinaryPath?: string;
   pageTitle?: string;
   version?: number;
 }
@@ -32,6 +40,9 @@ export interface UpdateFormValues {
   newCommitUrl?: string;
   newTagUrl?: string;
   newBranchUrl?: string;
+  toolLinks?: string;
+  intTestLinks?: string;
+  binaryPath?: string;
 }
 
 export interface UpdatePayload {
@@ -43,4 +54,7 @@ export interface UpdatePayload {
   newCommitUrl?: string;
   newTagUrl?: string;
   newBranchUrl?: string;
+  toolLinks?: string;
+  intTestLinks?: string;
+  binaryPath?: string;
 }

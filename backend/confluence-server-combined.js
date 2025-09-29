@@ -118,7 +118,7 @@ const server = http.createServer(async (req, res) => {
       req.on('data', chunk => body += chunk);
       req.on('end', async () => {
         try {
-          const { pageUrl, pageId, newDate, newJiraKey, newBaselineUrl, newRepoBaselineUrl, newCommitId, newCommitUrl, newTagUrl, newBranchUrl } = JSON.parse(body);
+          const { pageUrl, pageId, newDate, newJiraKey, newBaselineUrl, newRepoBaselineUrl, newCommitId, newCommitUrl, newTagUrl, newBranchUrl, toolLinks, intTestLinks, binaryPath } = JSON.parse(body);
 
           // Support both pageUrl (new) and pageId (legacy)
           const pageInput = pageUrl || pageId;
@@ -200,8 +200,26 @@ const server = http.createServer(async (req, res) => {
               updateTypes.push(`branch: ${extractedBranchName}`);
             }
 
+            // Handle tool links
+            if (toolLinks) {
+              args.push('--tool-links', toolLinks);
+              updateTypes.push(`tool links: ${toolLinks}`);
+            }
+
+            // Handle INT test links
+            if (intTestLinks) {
+              args.push('--int-test-links', intTestLinks);
+              updateTypes.push(`INT test links: ${intTestLinks}`);
+            }
+
+            // Handle binary path
+            if (binaryPath) {
+              args.push('--binary-path', binaryPath);
+              updateTypes.push(`binary path: ${binaryPath}`);
+            }
+
             if (updateTypes.length === 0) {
-              throw new Error('At least one update field must be provided (newDate, newJiraKey, newBaselineUrl, newRepoBaselineUrl, newCommitUrl, tag, or branch)');
+              throw new Error('At least one update field must be provided (newDate, newJiraKey, newBaselineUrl, newRepoBaselineUrl, newCommitUrl, tag, branch, toolLinks, intTestLinks, or binaryPath)');
             }
 
             console.log(`🔄 Multi-update request: ${pageInput} → ${updateTypes.join(', ')}`);
@@ -235,6 +253,10 @@ const server = http.createServer(async (req, res) => {
               let oldCommitId = null;
               let oldTagName = null;
               let oldBranchName = null;
+              let toolLinksUpdated = false;
+              let intTestLinksUpdated = false;
+              let binaryPathUpdated = false;
+              let oldBinaryPath = null;
               let pageTitle = null;
               let version = null;
 
@@ -281,6 +303,23 @@ const server = http.createServer(async (req, res) => {
                   if (match) oldBranchName = match[1];
                 }
 
+                // Parse tool links updates
+                if (line.includes('Tool Release Info links changed from:') || line.includes('Tool links update successful')) {
+                  toolLinksUpdated = true;
+                }
+
+                // Parse INT test links updates
+                if (line.includes('INT Test links changed from:') || line.includes('INT Test links update successful')) {
+                  intTestLinksUpdated = true;
+                }
+
+                // Parse binary path updates
+                if (line.includes('Binary path changed from:') || line.includes('Binary path update successful')) {
+                  binaryPathUpdated = true;
+                  const match = line.match(/Binary path changed from: (.+?) → (.+)/);
+                  if (match) oldBinaryPath = match[1];
+                }
+
                 if (line.includes('Display text:')) {
                   const match = line.match(/Display text: (.+)/);
                   if (match) newBaselineText = match[1];
@@ -310,6 +349,9 @@ const server = http.createServer(async (req, res) => {
                 if (actualCommitId || newCommitUrl) updates.push('commit information');
                 if (extractedTagName) updates.push('tag information');
                 if (extractedBranchName) updates.push('branch information');
+                if (toolLinksUpdated) updates.push('tool links');
+                if (intTestLinksUpdated) updates.push('INT test links');
+                if (binaryPathUpdated) updates.push('binary path');
                 message = `Updated: ${updates.join(', ')}`;
               }
 
@@ -335,6 +377,14 @@ const server = http.createServer(async (req, res) => {
                 oldBranchName: oldBranchName,
                 newBranchName: extractedBranchName,
                 newBranchUrl: newBranchUrl,
+                toolLinksUpdated: toolLinksUpdated,
+                toolLinksValue: toolLinks,
+                intTestLinksUpdated: intTestLinksUpdated,
+                intTestLinksValue: intTestLinks,
+                binaryPathUpdated: binaryPathUpdated,
+                binaryPathValue: binaryPath,
+                oldBinaryPath: oldBinaryPath,
+                newBinaryPath: binaryPath,
                 pageTitle: pageTitle,
                 version: version,
                 output: output
@@ -533,7 +583,7 @@ server.listen(PORT, () => {
   console.log('');
   console.log('📝 Update Endpoints:');
   console.log('   - POST /api/update-date (legacy date-only updates)');
-  console.log('   - POST /api/update-page (multi-field updates: date, Jira, predecessor baseline, repository baseline)');
+  console.log('   - POST /api/update-page (multi-field updates: date, Jira, predecessor baseline, repository baseline, commit, tag, branch, binary path, tool links, INT test links)');
   console.log('');
   console.log('📋 Confluence API Endpoints:');
   console.log('   - POST /api/copy-page (copy pages between spaces)');

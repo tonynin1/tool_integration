@@ -53,6 +53,21 @@ export const useConfluenceUpdate = () => {
         payload.newBranchUrl = values.newBranchUrl.trim();
       }
 
+      // Add tool links if provided
+      if (values.toolLinks) {
+        payload.toolLinks = values.toolLinks.trim();
+      }
+
+      // Add INT test links if provided
+      if (values.intTestLinks) {
+        payload.intTestLinks = values.intTestLinks.trim();
+      }
+
+      // Add binary path if provided
+      if (values.binaryPath) {
+        payload.binaryPath = values.binaryPath.trim();
+      }
+
       message.loading('Updating Confluence page via Python script...', 0);
 
       // Call the simple Node.js server that runs the Python script
@@ -85,6 +100,14 @@ export const useConfluenceUpdate = () => {
           oldBranchName: response.data.oldBranchName,
           newBranchName: response.data.newBranchName,
           newBranchUrl: response.data.newBranchUrl,
+          toolLinksUpdated: response.data.toolLinksUpdated,
+          toolLinksValue: response.data.toolLinksValue,
+          intTestLinksUpdated: response.data.intTestLinksUpdated,
+          intTestLinksValue: response.data.intTestLinksValue,
+          binaryPathUpdated: response.data.binaryPathUpdated,
+          binaryPathValue: response.data.binaryPathValue,
+          oldBinaryPath: response.data.oldBinaryPath,
+          newBinaryPath: response.data.newBinaryPath,
           pageTitle: response.data.pageTitle,
           version: response.data.version,
         });
