@@ -997,7 +997,7 @@ def main():
                 # Apply the INT Test updates - call the method to do the actual replacement
                 escaped_link = config.int_test_links.replace('\\', '\\\\')
                 escaped_link_with_int_test = escaped_link + '\\\\Int_test'
-                int_test_replacement = f'\\\\abtvdfs2.de.bosch.com{escaped_link_with_int_test}'
+                int_test_replacement = f'{escaped_link_with_int_test}'
 
                 updated_content = re.sub(PATTERNS['int_test_links'], int_test_replacement, updated_content)
 
