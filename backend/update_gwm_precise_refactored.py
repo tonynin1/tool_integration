@@ -34,7 +34,11 @@ PATTERNS = {
     'commit_link': r'(<span[^>]*>Commit:\s*<a href=")([^"]+)(">)([^<\s]+)(\s*</a>\s*<br />\s*</span>)',
     'tag_link': r'(<span[^>]*>Tag:\s*<a href=")([^"]+)(">)([^<]+)(</a>\s*</span>)',
     'branch_link': r'(<span[^>]*>Branch:\s*<a href=")([^"]+)(">)([^<]+)(</a>\s*</span>)',
-    'binary_path': r'(<span>)(\\\\<a class="external-link" href="[^"]*">[^<]+</a>\\[^<]+)(</span>)'
+    'binary_path': r'(<span>)(\\\\<a class="external-link" href="[^"]*">[^<]+</a>\\[^<]+)(</span>)',
+    'mea_tool_links': r'(<th class="highlight-#deebff"[^>]*data-highlight-colour="#deebff">MEA</th><td[^>]*>)(.*?)(</td>)',
+    'adm_tool_link': r'(<th class="highlight-blue"[^>]*data-highlight-colour="blue">ADM</th><td[^>]*>)(.*?)(</td>)',
+    'restbus_tool_link': r'(<th class="highlight-#deebff"[^>]*data-highlight-colour="#deebff">Restbus</th><td[^>]*>)(.*?)(</td>)',
+    'int_test_links': r'(\\\\abtvdfs2\.de\.bosch\.com[^<]*\\Int_test)'
 }
 
 @dataclass
@@ -51,7 +55,8 @@ class UpdateConfig:
     branch_name: Optional[str] = None
     branch_url: Optional[str] = None
     binary_path: Optional[str] = None
-    tool_path: Optional[str] = None
+    tool_links: Optional[str] = None
+    int_test_links: Optional[str] = None
 
 @dataclass
 class UpdateResult:
@@ -453,7 +458,6 @@ class ContentUpdater:
             return UpdateResult(True, old_branch, branch_name)
 
         return UpdateResult(False, old_branch, error="Verification failed")
-
     @staticmethod
     def update_binary_path(content: str, new_path: str) -> UpdateResult:
         """Update binary file path in the Binaries section"""
@@ -508,94 +512,78 @@ class ContentUpdater:
             return UpdateResult(False, old_full_path, error="Verification failed - no match found after update")
 
     @staticmethod
-    def update_tool_paths_auto(content: str, new_path: str) -> tuple:
-        """Update tool paths in the Tool Release Info section by auto-detecting old paths (path only, not filenames)"""
-        print("🔄 Updating tool paths in Tool Release Info section...")
+    def update_tool_links(content: str, new_tool_link: str) -> UpdateResult:
+        """Update Tool Release Info table links (MEA, ADM, Restbus)"""
+        print("🔄 Updating Tool Release Info table...")
 
-        # Format the new path if it's a simple path
-        if not '<a class="external-link"' in new_path:
-            if new_path.startswith('\\\\'):
-                parts = new_path[2:].split('\\', 1)
-                server = parts[0] if len(parts) > 0 else ''
-                remaining_path = '\\' + parts[1] if len(parts) > 1 else ''
-                formatted_new_path = f'\\\\<a class="external-link" href="http://{server}/">{server}</a>{remaining_path}'
-            else:
-                formatted_new_path = new_path
-        else:
-            formatted_new_path = new_path
+        # Escape backslashes for regex replacement
+        escaped_link = new_tool_link.replace('\\', '\\\\')
 
-        print(f"🔄 Updating to new path: {new_path}")
-
-        # Extract the Tool Release Info section
-        tool_section_start = content.find('<h1><strong>Tool Release Info</strong></h1>')
-        if tool_section_start == -1:
-            return UpdateResult(False, error="Tool Release Info section not found"), content
-
-        # Find the end of the Tool Release Info section (next h1 tag)
-        next_section_start = content.find('<h1>', tool_section_start + 1)
-        if next_section_start == -1:
-            tool_section = content[tool_section_start:]
-        else:
-            tool_section = content[tool_section_start:next_section_start]
-
-        # Find all tool paths using multiple patterns for different HTML formats
-        pattern1 = r'(\\\\<a class="external-link"[^>]*>[^<]+</a>\\[^<\s]+)'
-        pattern2 = r'<span[^>]*>\\\\</span><a class="external-link"[^>]*>[^<]+</a><span[^>]*>(\\[^<]+)</span>'
-
-        matches1 = re.findall(pattern1, tool_section)
-        matches2 = re.findall(pattern2, tool_section)
-
-        # Format span-wrapped paths to match standard format
-        formatted_matches2 = []
-        for match in matches2:
-            server_match = re.search(r'<a class="external-link"[^>]*href="[^"]*">([^<]+)</a>', tool_section)
-            if server_match:
-                server_name = server_match.group(1)
-                formatted_path = f'\\\\<a class="external-link" href="http://{server_name}/">{server_name}</a>{match}'
-                formatted_matches2.append(formatted_path)
-
-        matches = matches1 + formatted_matches2
-
-        if not matches:
-            return UpdateResult(False, error="No tool paths found in Tool Release Info section"), content
-
-        print(f"✅ Found {len(matches)} tool path(s) to update")
+        # Define the new content for each tool row
+        mea_new_content = f'<p>{escaped_link}</p><p>{escaped_link}</p>'
+        adm_new_content = escaped_link
+        restbus_new_content = escaped_link
 
         updated_content = content
-        total_replacements = 0
+        changes_made = False
 
-        for old_path in matches:
-            # Find where paths diverge to identify version difference
-            old_parts = old_path.split('\\')
-            new_parts = formatted_new_path.split('\\')
-
-            # Find the differing version part
-            diverge_index = -1
-            for idx, (old_part, new_part) in enumerate(zip(old_parts, new_parts)):
-                if old_part != new_part:
-                    diverge_index = idx
-                    break
-
-            if diverge_index >= 0 and diverge_index < len(old_parts) and diverge_index < len(new_parts):
-                # Create the updated path by reconstructing it
-                updated_parts = old_parts.copy()
-                updated_parts[diverge_index] = new_parts[diverge_index]
-                updated_old_path = '\\'.join(updated_parts)
-
-                # Skip if no actual change needed
-                if old_path == updated_old_path:
-                    continue
-
-                # Replace the old path with the updated path
-                if old_path in updated_content:
-                    updated_content = updated_content.replace(old_path, updated_old_path, 1)
-                    total_replacements += 1
-
-        if total_replacements > 0:
-            print(f"✅ Successfully updated {total_replacements} tool path(s)")
-            return UpdateResult(True, f"{total_replacements} paths", new_path), updated_content
+        # Update MEA links (2 links)
+        mea_pattern = PATTERNS['mea_tool_links']
+        mea_match = re.search(mea_pattern, updated_content, re.DOTALL)
+        if mea_match:
+            print(f"✅ Found MEA links, updating...")
+            updated_content = re.sub(mea_pattern, lambda m: f'{m.group(1)}{mea_new_content}{m.group(3)}', updated_content, flags=re.DOTALL)
+            changes_made = True
         else:
-            return UpdateResult(False, error="No tool paths were updated"), content
+            print("⚠️  MEA pattern not found")
+
+        # Update ADM link (1 link)
+        adm_pattern = PATTERNS['adm_tool_link']
+        adm_match = re.search(adm_pattern, updated_content, re.DOTALL)
+        if adm_match:
+            print(f"✅ Found ADM link, updating...")
+            updated_content = re.sub(adm_pattern, lambda m: f'{m.group(1)}{adm_new_content}{m.group(3)}', updated_content, flags=re.DOTALL)
+            changes_made = True
+        else:
+            print("⚠️  ADM pattern not found")
+
+        # Update Restbus link (1 link)
+        restbus_pattern = PATTERNS['restbus_tool_link']
+        restbus_match = re.search(restbus_pattern, updated_content, re.DOTALL)
+        if restbus_match:
+            print(f"✅ Found Restbus link, updating...")
+            updated_content = re.sub(restbus_pattern, lambda m: f'{m.group(1)}{restbus_new_content}{m.group(3)}', updated_content, flags=re.DOTALL)
+            changes_made = True
+        else:
+            print("⚠️  Restbus pattern not found")
+
+        if changes_made:
+            return UpdateResult(True, "Tool Release Info links", new_tool_link)
+        else:
+            return UpdateResult(False, error="No tool link patterns found")
+
+    @staticmethod
+    def update_int_test_links(content: str, new_link: str) -> UpdateResult:
+        """Update INT Test table links with \Int_test suffix"""
+        print("🔄 Updating INT Test table...")
+
+        # Escape backslashes and add Int_test suffix
+        escaped_link = new_link.replace('\\', '\\\\')
+        escaped_link_with_int_test = escaped_link + '\\\\Int_test'
+
+        # Generate the new INT Test link content to match HTML structure
+        int_test_replacement = f'\\\\abtvdfs2.de.bosch.com{escaped_link_with_int_test}'
+
+        # Update all INT Test links at once
+        int_test_pattern = PATTERNS['int_test_links']
+        int_test_matches = re.findall(int_test_pattern, content)
+        if int_test_matches:
+            print(f"✅ Found {len(int_test_matches)} INT Test links, updating...")
+            updated_content = re.sub(int_test_pattern, int_test_replacement, content)
+            return UpdateResult(True, "INT Test links", new_link)
+        else:
+            print("⚠️  No INT Test links found")
+            return UpdateResult(False, error="No INT Test link patterns found")
 
     @staticmethod
     def _extract_page_title_from_url(url: str) -> str:
@@ -673,10 +661,15 @@ class ArgumentParser:
                     raise ValueError("Missing binary path after --binary-path flag")
                 config.binary_path = args[i + 1]
                 i += 2
-            elif arg == '--tool-path':
+            elif arg == '--tool-links':
                 if i + 1 >= len(args):
-                    raise ValueError("Missing new tool path after --tool-path flag")
-                config.tool_path = args[i + 1]
+                    raise ValueError("Missing tool link after --tool-links flag")
+                config.tool_links = args[i + 1]
+                i += 2
+            elif arg == '--int-test-links':
+                if i + 1 >= len(args):
+                    raise ValueError("Missing link after --int-test-links flag")
+                config.int_test_links = args[i + 1]
                 i += 2
             elif not arg.startswith('--'):
                 # Assume it's a date
@@ -690,8 +683,7 @@ class ArgumentParser:
         # Validate that at least one update is specified
         if not any([config.date, config.jira_key,
                    config.predecessor_baseline_url, config.repository_baseline_url,
-                   config.commit_id, config.tag_name, config.branch_name, config.binary_path,
-                   config.tool_path]):
+                   config.commit_id, config.tag_name, config.branch_name, config.tool_links, config.int_test_links]):
             raise ValueError("No updates specified")
 
         return page_input, config
@@ -761,11 +753,21 @@ class ArgumentParser:
             if not (config.branch_url.startswith('http') and 'sourcecode' in config.branch_url):
                 raise ValueError(f"Invalid branch URL format: {config.branch_url}")
 
+        # Validate tool links (basic validation - should be a string)
+        if config.tool_links:
+            if not isinstance(config.tool_links, str) or len(config.tool_links.strip()) == 0:
+                raise ValueError("Tool links must be a non-empty string")
+
+        # Validate INT test links (basic validation - should be a string)
+        if config.int_test_links:
+            if not isinstance(config.int_test_links, str) or len(config.int_test_links.strip()) == 0:
+                raise ValueError("INT test links must be a non-empty string")
+
     @staticmethod
     def _show_usage():
         """Display usage information"""
         print("Usage:")
-        print("  python3 update_gwm_precise.py <confluence_url> [date] [--jira key] [--baseline url] [--repo-baseline url] [--commit id url] [--tag name url] [--branch name url] [--binary-path path] [--tool-path new_path]")
+        print("  python3 update_gwm_precise.py <confluence_url> [date] [--jira key] [--baseline url] [--repo-baseline url] [--commit id url] [--tag name url] [--branch name url] [--binary-path path] [--tool-links link] [--int-test-links link]")
         print()
         print("Examples:")
         print("  Date only:")
@@ -778,10 +780,14 @@ class ArgumentParser:
         print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' --tag GWM_FVE0120_BL02_V8.1 'https://sourcecode06.../commits?until=GWM_FVE0120_BL02_V8.1' --branch 'release/CNGWM_FVE0120_BL02_V8.1' 'https://sourcecode06.../commits?until=refs%2Fheads%2Frelease%2FCNGWM_FVE0120_BL02_V8.1'")
         print("  Binary Path only:")
         print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' --binary-path 'A07G_FVE0120\\BL02\\V8\\Int_test'")
-        print("  Tool Path only:")
-        print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' --tool-path '\\\\abtvdfs2.de.bosch.com\\ismdfs\\loc\\szh\\DA\\Driving\\SW_TOOL_Release\\MPC3_EVO\\GWM\\FVE0120\\A07G\\BL02\\V8.1'")
+        print("  Tool Links only (replaces 4 Tool Release Info links):")
+        print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' --tool-links '\\\\abtvdfs2.de.bosch.com\\ismdfs\\loc\\szh\\DA\\Driving\\SW_TOOL_Release\\MPC3_EVO\\GWM\\FVE0120\\A07G\\BL02\\V8.4'")
+        print("  INT Test Links only (replaces 4 INT Test links with \\Int_test suffix):")
+        print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' --int-test-links '\\\\abtvdfs2.de.bosch.com\\ismdfs\\loc\\szh\\DA\\Driving\\SW_TOOL_Release\\MPC3_EVO\\GWM\\FVE0120\\A07G\\BL02\\V8.4'")
+        print("  Both Tool and INT Test Links:")
+        print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' --tool-links '\\\\abtvdfs2.de.bosch.com\\ismdfs\\loc\\szh\\DA\\Driving\\SW_TOOL_Release\\MPC3_EVO\\GWM\\FVE0120\\A07G\\BL02\\V8.4' --int-test-links '\\\\abtvdfs2.de.bosch.com\\ismdfs\\loc\\szh\\DA\\Driving\\SW_TOOL_Release\\MPC3_EVO\\GWM\\FVE0120\\A07G\\BL02\\V8.4'")
         print("  Multiple updates:")
-        print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' '2025-09-25' --jira MPCTEGWMA-3000 --commit abc123def456... 'https://sourcecode06.../commits/abc123def456...' --tag GWM_FVE0120_BL02_V8.1 'https://sourcecode06.../commits?until=GWM_FVE0120_BL02_V8.1' --binary-path 'A07G_FVE0120\\BL02\\V8\\Int_test' --tool-path '\\\\abtvdfs2.de.bosch.com\\ismdfs\\loc\\szh\\DA\\Driving\\SW_TOOL_Release\\MPC3_EVO\\GWM\\FVE0120\\A07G\\BL02\\V8.1'")
+        print("    python3 update_gwm_precise.py 'https://...display/EBR/Page' '2025-09-25' --jira MPCTEGWMA-3000 --commit abc123def456... 'https://sourcecode06.../commits/abc123def456...' --tag GWM_FVE0120_BL02_V8.1 'https://sourcecode06.../commits?until=GWM_FVE0120_BL02_V8.1' --tool-links '\\\\abtvdfs2.de.bosch.com\\ismdfs\\loc\\szh\\DA\\Driving\\SW_TOOL_Release\\MPC3_EVO\\GWM\\FVE0120\\A07G\\BL02\\V8.4'")
 
 # ============================================================================
 # MAIN APPLICATION
@@ -815,8 +821,10 @@ def main():
             print(f"🔗 New branch URL: {config.branch_url}")
         if config.binary_path:
             print(f"📁 New binary path: {config.binary_path}")
-        if config.tool_path:
-            print(f"🔧 New tool path: {config.tool_path}")
+        if config.tool_links:
+            print(f"🔧 New tool links: {config.tool_links}")
+        if config.int_test_links:
+            print(f"🧪 New INT test links: {config.int_test_links}")
         print()
 
         # Initialize Confluence client
@@ -935,7 +943,6 @@ def main():
                 print("✅ Branch information update successful")
             else:
                 print(f"⚠️  Branch information update failed: {result.error}")
-
         # Update binary path
         if config.binary_path:
             result = updater.update_binary_path(updated_content, config.binary_path)
@@ -963,16 +970,42 @@ def main():
             else:
                 print(f"⚠️  Binary path update failed: {result.error}")
 
-        # Update tool paths
-        if config.tool_path:
-            result, new_content = updater.update_tool_paths_auto(updated_content, config.tool_path)
+        # Update Tool Release Info links (MEA, ADM, Restbus)
+        if config.tool_links:
+            result = updater.update_tool_links(updated_content, config.tool_links)
             if result.success:
-                updated_content = new_content
+                # Apply the Tool Release Info updates
+                escaped_link = config.tool_links.replace('\\', '\\')
+                mea_new_content = f'<p>{escaped_link}</p><p>{escaped_link}</p>'
+                adm_new_content = escaped_link
+                restbus_new_content = escaped_link
+
+                updated_content = re.sub(PATTERNS['mea_tool_links'], lambda m: f'{m.group(1)}{mea_new_content}{m.group(3)}', updated_content, flags=re.DOTALL)
+                updated_content = re.sub(PATTERNS['adm_tool_link'], lambda m: f'{m.group(1)}{adm_new_content}{m.group(3)}', updated_content, flags=re.DOTALL)
+                updated_content = re.sub(PATTERNS['restbus_tool_link'], lambda m: f'{m.group(1)}{restbus_new_content}{m.group(3)}', updated_content, flags=re.DOTALL)
+
                 changes_made = True
-                results['tool_path'] = result
-                print("✅ Tool path update successful")
+                results['tool_links'] = result
+                print("✅ Tool Release Info links update successful")
             else:
-                print(f"⚠️  Tool path update failed: {result.error}")
+                print(f"⚠️  Tool links update failed: {result.error}")
+
+        # Update INT Test links separately
+        if config.int_test_links:
+            result = updater.update_int_test_links(updated_content, config.int_test_links)
+            if result.success:
+                # Apply the INT Test updates - call the method to do the actual replacement
+                escaped_link = config.int_test_links.replace('\\', '\\\\')
+                escaped_link_with_int_test = escaped_link + '\\\\Int_test'
+                int_test_replacement = f'\\\\abtvdfs2.de.bosch.com{escaped_link_with_int_test}'
+
+                updated_content = re.sub(PATTERNS['int_test_links'], int_test_replacement, updated_content)
+
+                changes_made = True
+                results['int_test_links'] = result
+                print("✅ INT Test links update successful")
+            else:
+                print(f"⚠️  INT Test links update failed: {result.error}")
 
         if not changes_made:
             print("⚠️  No changes made - could not find or update the requested fields")
@@ -1006,12 +1039,16 @@ def main():
         if 'branch' in results:
             r = results['branch']
             print(f"🌿 Branch changed from: {r.old_value} → {r.new_value}")
-        if 'binary_path' in results:
-            r = results['binary_path']
-            print(f"📁 Binary path changed from: {r.old_value} → {r.new_value}")
-        if 'tool_path' in results:
-            r = results['tool_path']
-            print(f"🔧 Tool path changed from: {r.old_value} → {r.new_value}")
+        if 'tool_links' in results:
+            r = results['tool_links']
+            print(f"🔧 Tool Release Info links changed from: {r.old_value} → {r.new_value}")
+            print(f"   - MEA: 2 links updated")
+            print(f"   - ADM: 1 link updated")
+            print(f"   - Restbus: 1 link updated")
+        if 'int_test_links' in results:
+            r = results['int_test_links']
+            print(f"🧪 INT Test links changed from: {r.old_value} → {r.new_value}")
+            print(f"   - 4 links updated (with \\Int_test suffix)")
 
     except Exception as e:
         print(f"💥 Error: {e}")
