@@ -1,45 +1,41 @@
 services:
-  # Backend Node.js server
+  # Backend Node.js server for development
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: confluence-backend
+    container_name: confluence-backend-dev
     restart: unless-stopped
     ports:
       - "3002:3002"
     environment:
-      - NODE_ENV=production
+      - NODE_ENV=development
     networks:
       - confluence-network
-    healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3002/api/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
 
-  # Frontend React app with serve
-  frontend:
+  # Frontend React app for development
+  frontend-dev:
     build:
       context: ./frontend
-      dockerfile: Dockerfile.simple
-    container_name: confluence-frontend
+      dockerfile: Dockerfile.dev
+    container_name: confluence-frontend-dev
     restart: unless-stopped
     ports:
       - "3000:3000"
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+      - REACT_APP_API_URL=http://localhost:3002
+    volumes:
+      # Mount source code for hot reloading
+      - ./frontend:/app
+      - /app/node_modules
     depends_on:
-      backend:
-        condition: service_healthy
+      - backend
     networks:
       - confluence-network
-    environment:
-      - REACT_APP_API_URL=http://localhost:3002
+    stdin_open: true
+    tty: true
 
 networks:
   confluence-network:
     driver: bridge
-
-volumes:
-  # Add any persistent volumes if needed
-  node_modules_cache:
